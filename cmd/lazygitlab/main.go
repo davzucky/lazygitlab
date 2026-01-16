@@ -9,6 +9,7 @@ import (
 	"github.com/davzucky/lazygitlab/pkg/config"
 	"github.com/davzucky/lazygitlab/pkg/gui"
 	"github.com/davzucky/lazygitlab/pkg/project"
+	"github.com/davzucky/lazygitlab/pkg/utils"
 )
 
 type errorModel struct {
@@ -36,10 +37,17 @@ func (m errorModel) View() string {
 
 func main() {
 	projectFlag := flag.String("project", "", "Manually specify GitLab project path (e.g., group/project)")
+	debugFlag := flag.Bool("debug", false, "Enable verbose debugging")
 	flag.Parse()
+
+	if err := utils.InitLogger(*debugFlag); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+	}
+	defer utils.Close()
 
 	cfg, err := config.Load()
 	if err != nil {
+		utils.Error("Failed to load config: %v", err)
 		p := tea.NewProgram(errorModel{error: err.Error()})
 		if _, err := p.Run(); err != nil {
 			os.Exit(1)
@@ -47,7 +55,10 @@ func main() {
 		return
 	}
 
+	utils.Debug("Loaded config: host=%s, hasToken=%v", cfg.Host, cfg.Token != "")
+
 	if err := cfg.Validate(); err != nil {
+		utils.Error("Invalid config: %v", err)
 		p := tea.NewProgram(errorModel{error: fmt.Sprintf("Invalid GitLab token: %v", err)})
 		if _, err := p.Run(); err != nil {
 			os.Exit(1)
@@ -55,9 +66,14 @@ func main() {
 		return
 	}
 
+	utils.Info("Configuration validated successfully")
+
 	projectPath, err := project.DetectProjectPath(*projectFlag)
 	if err != nil {
+		utils.Error("Failed to detect project path: %v", err)
 		projectPath = fmt.Sprintf("Detection failed: %v", err)
+	} else {
+		utils.Info("Detected project path: %s", projectPath)
 	}
 
 	connection := "Connected to " + cfg.Host

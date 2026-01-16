@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 
+	spin "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -25,6 +26,10 @@ type Model struct {
 	height       int
 	styles       *Style
 	showHelp     bool
+	showError    bool
+	errorMessage string
+	isLoading    bool
+	spinner      spin.Model
 }
 
 type ListItem struct {
@@ -34,6 +39,8 @@ type ListItem struct {
 
 func NewModel(projectPath string, connection string) Model {
 	styles := NewStyle()
+	spinner := spin.New()
+	spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
 
 	return Model{
 		currentView:  ProjectsView,
@@ -44,11 +51,15 @@ func NewModel(projectPath string, connection string) Model {
 		width:        80,
 		height:       24,
 		styles:       styles,
+		showError:    false,
+		errorMessage: "",
+		isLoading:    false,
+		spinner:      spinner,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return m.spinner.Tick
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -57,7 +68,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+	case spin.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
 	case tea.KeyMsg:
+		if m.showError {
+			switch msg.String() {
+			case "r":
+				m.showError = false
+			case "esc", "q":
+				m.showError = false
+			}
+			return m, nil
+		}
+
 		if m.showHelp {
 			switch msg.String() {
 			case "esc", "q", "?":
@@ -125,6 +151,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.showError {
+		return m.renderErrorPopup()
+	}
+
 	if m.showHelp {
 		return m.renderHelpPopup()
 	}
@@ -187,6 +217,12 @@ func (m Model) renderMainPanel() string {
 		title = "Issues"
 	case MergeRequestsView:
 		title = "Merge Requests"
+	}
+
+	if m.isLoading {
+		loadingText := "  " + m.spinner.View() + " Loading..."
+		content := m.styles.MainPanelHeader.Render(title) + "\n\n" + loadingText
+		return m.styles.MainPanel.Render(content)
 	}
 
 	if len(m.items) == 0 {
@@ -265,4 +301,38 @@ Press Esc or ? to close
 		Align(lipgloss.Center)
 
 	return helpStyle.Render(helpContent)
+}
+
+func (m Model) renderErrorPopup() string {
+	errorContent := fmt.Sprintf("Error\n\n%s\n\nPress r to retry\nPress q or Esc to close", m.errorMessage)
+
+	errorStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("196")).
+		Background(lipgloss.Color("52")).
+		Foreground(lipgloss.Color("255")).
+		Padding(1, 2).
+		Width(60).
+		Align(lipgloss.Center)
+
+	return errorStyle.Render(errorContent)
+}
+
+func (m *Model) SetLoading(loading bool) {
+	m.isLoading = loading
+}
+
+func (m *Model) SetError(message string) {
+	m.errorMessage = message
+	m.showError = true
+}
+
+func (m *Model) ClearError() {
+	m.errorMessage = ""
+	m.showError = false
+}
+
+func (m *Model) SetItems(items []ListItem) {
+	m.items = items
+	m.selectedItem = 0
 }
