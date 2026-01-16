@@ -27,3 +27,46 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - ralph.sh script expects PRD in scripts/ directory, not tasks/
 - PRD must have "branchName" field and "passes" field for each user story
 ---
+
+## Fri Jan 16 10:00:00 PM JST 2026 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented configuration management with support for multiple config sources
+- Read glab CLI config from `~/.config/glab-cli/config.yml`
+- Support custom config file at `~/.config/lazygitlab/config.yml` using viper library
+- Support `GITLAB_TOKEN` and `GITLAB_HOST` environment variables
+- Config precedence: env vars > lazygitlab config > glab config
+- Validate token on startup with API call using go-gitlab client
+- Clear error message when no valid configuration found
+- Updated main.go to load and validate config on startup
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Use viper for YAML configuration files (modern, well-maintained)
+- Use gitlab.com/gitlab-org/api/client-go library for GitLab API (official Go SDK)
+- Config pattern: env vars > config file > other config sources
+- Always validate config on startup to fail fast with clear error messages
+ - pkg/config/ package handles all configuration logic with Load() and Validate() methods
+ ---
+
+## Fri Jan 16 09:58:00 PM JST 2026 - US-003
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created GitLab API client wrapper with interface-based design at pkg/gitlab/
+- Implemented Client interface with methods: GetCurrentUser, GetProject, GetIssues, GetMergeRequests, Close
+- Wrapper around gitlab.com/gitlab-org/api/client-go library
+- Support for custom GitLab host URLs (self-hosted instances)
+- Automatic pagination handling for list endpoints (issues and merge requests)
+- Error handling with user-friendly messages using fmt.Errorf with wrapping
+- Created mockClient for testing
+- Updated config.Validate() to use new gitlab client wrapper
+- Created comprehensive tests for client creation and options structures
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Use gitlab.com/gitlab-org/api/client-go for GitLab API (already imported in go.mod)
+- ListProjectIssuesOptions and ListProjectMergeRequestsOptions embed ListOptions for pagination
+- Pagination fields are int64 type (Page, PerPage) not int
+- ListProjectMergeRequests returns []*BasicMergeRequest not []*MergeRequest
+- String options need pointer to string, not gitlab.String() function (which doesn't exist in this version)
+- Always use interface-based design for external API clients to enable mocking in tests
+- pkg/gitlab/ package provides abstraction layer over GitLab API
+---

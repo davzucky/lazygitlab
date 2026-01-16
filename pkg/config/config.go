@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/davzucky/lazygitlab/pkg/gitlab"
 	"github.com/spf13/viper"
-	"gitlab.com/gitlab-org/api/client-go"
 )
 
 type Config struct {
@@ -117,12 +117,13 @@ func (c *Config) isValid() bool {
 }
 
 func (c *Config) Validate() error {
-	client, err := gitlab.NewClient(c.Token, gitlab.WithBaseURL(c.Host))
+	client, err := gitlab.NewClient(c.Token, c.Host)
 	if err != nil {
 		return fmt.Errorf("failed to create GitLab client: %w", err)
 	}
+	defer client.Close()
 
-	user, _, err := client.Users.CurrentUser()
+	user, err := client.GetCurrentUser()
 	if err != nil {
 		return fmt.Errorf("failed to validate token: %w", err)
 	}
