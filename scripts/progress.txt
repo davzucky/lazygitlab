@@ -1,3 +1,10 @@
 # Ralph Progress Log
 Started: Fri Jan 16 09:35:05 PM JST 2026
 ---
+
+## Codebase Patterns
+- Use bubbletea framework for TUI (modern, well-maintained)
+- Project follows standard Go layout: cmd/ for entry point, pkg/ for packages
+- Makefile targets: build, run, test, lint, clean, install
+- Always run `make build` and `make test` before committing
+- Binary output directory: bin/
