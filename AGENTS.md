@@ -21,3 +21,29 @@ The gitlab package provides an abstraction layer over GitLab's Go SDK (gitlab.co
 
 - Use the `mockClient` struct in client_test.go as a template for testing code that uses the GitLab API
 - The mock implements the same interface as the real client for easy swapping
+
+# GUI Framework
+
+## pkg/gui/ Package
+
+The gui package provides the TUI (Terminal User Interface) using the bubbletea framework.
+
+### Architecture
+
+- The main layout consists of three panels: sidebar (navigation), main panel (list view), and details panel (preview)
+- Use lipgloss for styling and layout management
+- Keyboard navigation: `j`/`k` for list navigation, `1`/`2`/`3` for view switching, `q` to quit
+- Status bar displays project context and connection status
+
+### Component Structure
+
+- `styles.go`: Centralized styling with lipgloss (colors, borders, padding)
+- `model.go`: Bubbletea Model implementation with Update and View methods
+- ViewMode enum tracks current panel (ProjectsView, IssuesView, MergeRequestsView)
+
+### Patterns
+
+- Initialize styles once with `NewStyle()` constructor
+- Render methods (`renderSidebar`, `renderMainPanel`, etc.) should return styled strings
+- Always handle empty states in list views
+- Use `tea.WindowSizeMsg` to handle terminal resizing
