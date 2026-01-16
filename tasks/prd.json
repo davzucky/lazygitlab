@@ -27,7 +27,7 @@
         "`.gitignore` configured for Go projects",
         "Project compiles and runs showing empty TUI window"
       ],
-      "status": "pending",
+      "status": "completed",
       "passes": true
     },
     {
@@ -42,7 +42,7 @@
         "Validate token on startup with API call",
         "Clear error message when no valid configuration found"
       ],
-      "status": "pending",
+      "status": "completed",
       "passes": true,
       "dependsOn": ["US-001"]
     },

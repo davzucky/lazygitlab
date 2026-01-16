@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"errors"
 	"testing"
 
 	"gitlab.com/gitlab-org/api/client-go"
@@ -74,42 +75,6 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestGetIssuesOptions(t *testing.T) {
-	opts := &GetIssuesOptions{
-		State:   "opened",
-		Page:    1,
-		PerPage: 50,
-	}
-
-	if opts.State != "opened" {
-		t.Errorf("Expected State to be 'opened', got '%s'", opts.State)
-	}
-	if opts.Page != 1 {
-		t.Errorf("Expected Page to be 1, got %d", opts.Page)
-	}
-	if opts.PerPage != 50 {
-		t.Errorf("Expected PerPage to be 50, got %d", opts.PerPage)
-	}
-}
-
-func TestGetMergeRequestsOptions(t *testing.T) {
-	opts := &GetMergeRequestsOptions{
-		State:   "opened",
-		Page:    1,
-		PerPage: 50,
-	}
-
-	if opts.State != "opened" {
-		t.Errorf("Expected State to be 'opened', got '%s'", opts.State)
-	}
-	if opts.Page != 1 {
-		t.Errorf("Expected Page to be 1, got %d", opts.Page)
-	}
-	if opts.PerPage != 50 {
-		t.Errorf("Expected PerPage to be 50, got %d", opts.PerPage)
-	}
-}
-
 func TestMockClient(t *testing.T) {
 	mock := &mockClient{
 		user: &gitlab.User{
@@ -129,21 +94,9 @@ func TestMockClient(t *testing.T) {
 		t.Errorf("Expected username 'testuser', got '%s'", user.Username)
 	}
 
-	mock.userErr = Error("test error")
+	mock.userErr = errors.New("test error")
 	_, err = mock.GetCurrentUser()
 	if err == nil {
 		t.Error("Expected error, got nil")
 	}
-}
-
-func Error(s string) error {
-	return &errorString{s}
-}
-
-type errorString struct {
-	s string
-}
-
-func (e *errorString) Error() string {
-	return e.s
 }

@@ -7,12 +7,8 @@ import (
 )
 
 func TestLoadFromEnv(t *testing.T) {
-	os.Setenv("GITLAB_TOKEN", "test-token")
-	os.Setenv("GITLAB_HOST", "https://gitlab.example.com")
-	defer func() {
-		os.Unsetenv("GITLAB_TOKEN")
-		os.Unsetenv("GITLAB_HOST")
-	}()
+	t.Setenv("GITLAB_TOKEN", "test-token")
+	t.Setenv("GITLAB_HOST", "https://gitlab.example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -29,14 +25,15 @@ func TestLoadFromEnv(t *testing.T) {
 }
 
 func TestLoadNoConfig(t *testing.T) {
-	os.Unsetenv("GITLAB_TOKEN")
-	os.Unsetenv("GITLAB_HOST")
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("GITLAB_HOST", "")
 
 	cfg, err := Load()
 
 	if err == nil {
-		t.Log("Note: Configuration loaded from glab config file (this is expected if glab is configured)")
-		return
+		t.Fatal("Expected error when no configuration is present")
 	}
 
 	if cfg != nil {

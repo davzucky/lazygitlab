@@ -16,14 +16,14 @@ type Client interface {
 
 type GetIssuesOptions struct {
 	State   string
-	Page    int
-	PerPage int
+	Page    int64
+	PerPage int64
 }
 
 type GetMergeRequestsOptions struct {
 	State   string
-	Page    int
-	PerPage int
+	Page    int64
+	PerPage int64
 }
 
 type client struct {
@@ -80,7 +80,7 @@ func (c *client) GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitla
 			options.State = &opts.State
 		}
 		if opts.PerPage > 0 {
-			options.ListOptions.PerPage = int64(opts.PerPage)
+			options.ListOptions.PerPage = opts.PerPage
 		}
 	}
 
@@ -121,7 +121,7 @@ func (c *client) GetMergeRequests(projectPath string, opts *GetMergeRequestsOpti
 			options.State = &opts.State
 		}
 		if opts.PerPage > 0 {
-			options.ListOptions.PerPage = int64(opts.PerPage)
+			options.ListOptions.PerPage = opts.PerPage
 		}
 	}
 

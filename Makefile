@@ -4,6 +4,7 @@ BINARY_NAME=lazygitlab
 BUILD_DIR=bin
 CMD_DIR=cmd/lazygitlab
 MAIN_FILE=$(CMD_DIR)/main.go
+MAIN_PKG=./$(CMD_DIR)
 
 help:
 	@echo "Available targets:"
@@ -44,7 +45,7 @@ clean:
 
 install: build
 	@echo "Installing $(BINARY_NAME)..."
-	@go install $(MAIN_FILE)
+	@go install $(MAIN_PKG)
 	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY_NAME)"
 
 deps:

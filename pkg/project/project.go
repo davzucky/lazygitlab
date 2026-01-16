@@ -26,12 +26,20 @@ func DetectProjectPath(overridePath, host string) (string, error) {
 }
 
 func detectFromGitRemote(host string) (string, error) {
-	gitDir := ".git"
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Env = os.Environ()
+	rootOutput, err := cmd.Output()
+	if err != nil {
 		return "", fmt.Errorf("not a git repository (or any parent up to mount point)")
 	}
 
-	cmd := exec.Command("git", "remote", "-v")
+	repoRoot := strings.TrimSpace(string(rootOutput))
+	if repoRoot == "" {
+		return "", fmt.Errorf("not a git repository (or any parent up to mount point)")
+	}
+
+	cmd = exec.Command("git", "remote", "-v")
+	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("failed to get git remotes: %w", err)
@@ -94,18 +102,19 @@ func extractProjectPath(remoteURL string, host string) (string, error) {
 	}
 
 	if strings.HasPrefix(remoteURL, "git@") {
-		parts := strings.SplitN(remoteURL, ":", 2)
-		if len(parts) != 2 {
+		re := regexp.MustCompile(`^git@([^:]+):(.+?)(?:\.git)?$`)
+		matches := re.FindStringSubmatch(remoteURL)
+		if len(matches) < 3 {
 			return "", fmt.Errorf("invalid SSH remote URL format: %s", remoteURL)
 		}
 
-		hostPart := strings.TrimPrefix(parts[0], "git@")
+		hostPart := matches[1]
 		normalizedHost := normalizeHost(host)
 		if normalizedHost != "" && hostPart != normalizedHost {
 			return "", fmt.Errorf("remote host %s does not match configured host %s", hostPart, normalizedHost)
 		}
 
-		projectPath := strings.TrimSuffix(parts[1], ".git")
+		projectPath := strings.TrimSuffix(matches[2], ".git")
 		if !isValidProjectPath(projectPath) {
 			return "", fmt.Errorf("invalid project path: %s", projectPath)
 		}

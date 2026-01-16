@@ -34,7 +34,7 @@ func TestDetectProjectPath_Override(t *testing.T) {
 			name:        "invalid override empty string",
 			override:    "",
 			expected:    "",
-			expectError: false, // Will fall back to git detection
+			expectError: true,
 		},
 	}
 
@@ -45,13 +45,14 @@ func TestDetectProjectPath_Override(t *testing.T) {
 				if err == nil {
 					t.Errorf("expected error but got none")
 				}
-			} else {
-				if err != nil && tt.override != "" {
-					t.Errorf("unexpected error: %v", err)
-				}
-				if result != tt.expected && tt.override != "" {
-					t.Errorf("expected %s, got %s", tt.expected, result)
-				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, result)
 			}
 		})
 	}

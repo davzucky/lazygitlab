@@ -42,6 +42,7 @@ func main() {
 
 	if err := utils.InitLogger(*debugFlag); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
 	}
 	defer utils.Close()
 
@@ -49,10 +50,10 @@ func main() {
 	if err != nil {
 		utils.Error("Failed to load config: %v", err)
 		p := tea.NewProgram(errorModel{error: err.Error()})
-		if _, err := p.Run(); err != nil {
-			os.Exit(1)
+		if _, runErr := p.Run(); runErr != nil {
+			utils.Error("Failed to run error UI: %v", runErr)
 		}
-		return
+		os.Exit(1)
 	}
 
 	utils.Debug("Loaded config: host=%s, hasToken=%v", cfg.Host, cfg.Token != "")
@@ -60,10 +61,10 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		utils.Error("Invalid config: %v", err)
 		p := tea.NewProgram(errorModel{error: fmt.Sprintf("Invalid GitLab token: %v", err)})
-		if _, err := p.Run(); err != nil {
-			os.Exit(1)
+		if _, runErr := p.Run(); runErr != nil {
+			utils.Error("Failed to run error UI: %v", runErr)
 		}
-		return
+		os.Exit(1)
 	}
 
 	utils.Info("Configuration validated successfully")

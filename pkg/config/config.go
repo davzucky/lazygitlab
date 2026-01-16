@@ -59,7 +59,7 @@ func loadFromLazyGitLabConfig(cfg *Config) {
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(homeDir + "/.config/lazygitlab/")
+	v.AddConfigPath(filepath.Join(homeDir, ".config", "lazygitlab"))
 
 	if err := v.ReadInConfig(); err != nil {
 		return

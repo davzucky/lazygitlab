@@ -8,8 +8,7 @@ import (
 
 func TestInitLogger(t *testing.T) {
 	testLogDir := filepath.Join(os.TempDir(), "lazygitlab-test")
-	os.Setenv("HOME", testLogDir)
-	defer os.Unsetenv("HOME")
+	t.Setenv("HOME", testLogDir)
 
 	if err := InitLogger(true); err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
@@ -30,16 +29,16 @@ func TestInitLogger(t *testing.T) {
 
 func TestLoggerDoesNotCrash(t *testing.T) {
 	testLogDir := filepath.Join(os.TempDir(), "lazygitlab-test-nocrash")
-	os.Setenv("HOME", testLogDir)
+	t.Setenv("HOME", testLogDir)
 
 	if err := InitLogger(true); err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
+	defer Close()
 
 	Debug("test debug message: %s", "value")
 	Info("test info message: %s", "value")
 	Error("test error message: %s", "value")
 
-	Close()
 	os.RemoveAll(testLogDir)
 }
