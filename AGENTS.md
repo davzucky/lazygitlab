@@ -85,3 +85,62 @@ The project package handles automatic detection of GitLab project context from g
 - Call `project.DetectProjectPath(*projectFlag)` after config validation
 - Pass detected project path to GUI model via `gui.NewModel(projectPath, connection)`
 - Display project path in status bar for user awareness
+
+# Utils & Logging
+
+## pkg/utils/ Package
+
+The utils package provides shared utility functions, including logging functionality for debugging.
+
+### Logger Implementation
+
+- Singleton pattern using `sync.Once` for one-time initialization
+- Logs to `~/.local/share/lazygitlab/debug.log` (creates directory if needed)
+- Thread-safe writes using mutex lock
+- Three log levels: Debug, Info, Error (all use same format with prefix)
+- Debug messages only logged when debug mode is enabled
+
+### Patterns
+
+- Initialize logger with `utils.InitLogger(debug bool)` in main.go
+- Always defer `utils.Close()` after initialization to clean up resources
+- Use format strings with placeholders: `Debug("message: %s", value)` not `Debug(message)`
+- Log directory path: `filepath.Join(os.Getenv("HOME"), ".local", "share", "lazygitlab")`
+- Use `os.MkdirAll(logDir, 0755)` to create nested directories
+- Open log file with `os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)`
+- Sync file after each write: `file.Sync()`
+
+### Integration
+
+- Add `--debug` flag to main.go for enabling verbose logging
+- Import utils package in main.go and call `utils.InitLogger(*debugFlag)`
+- Use `utils.Debug()`, `utils.Info()`, and `utils.Error()` throughout the codebase
+- Log important events: config loading, validation, API calls, errors
+- Debug mode helps diagnose issues in production without cluttering normal operation
+
+# Loading and Error States
+
+## GUI Model Patterns
+
+The GUI model includes built-in support for loading indicators and error popups.
+
+### Loading State
+
+- Add `isLoading bool` field to Model struct
+- Add `spinner spin.Model` field for loading animation
+- Initialize spinner with `spin.New()` in `NewModel()`
+- Set spinner style: `spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))`
+- Return `m.spinner.Tick` from `Init()` method
+- Handle `spin.TickMsg` in `Update()` method: `m.spinner, cmd = m.spinner.Update(msg)`
+- Show spinner in View: `m.spinner.View() + " Loading..."`
+- Add `SetLoading(bool)` helper method to control loading state
+
+### Error Popup
+
+- Add `showError bool` and `errorMessage string` fields to Model struct
+- Check `showError` first in both `Update()` and `View()` methods
+- In `View()`: return `m.renderErrorPopup()` if showing, before other popups
+- In `Update()`: handle popup-specific keys (e.g., `r` for retry, `q`/`esc` to close)
+- Create `renderErrorPopup()` method with styled error message
+- Error popup styling: use red border (`lipgloss.Color("196")`) and dark red background
+- Add helper methods: `SetError(message string)`, `ClearError()`

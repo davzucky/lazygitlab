@@ -125,3 +125,53 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Updated AGENTS.md with Keyboard Navigation section documenting key patterns
 - For popups: check state in Update first, then render with dedicated method in View
 ---
+## Fri Jan 16 10:48:49 PM JST 2026 - US-006
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created pkg/project/ package for automatic GitLab project detection from git remotes
+- Implemented DetectProjectPath() function supporting manual override via --project flag
+- Implemented detectFromGitRemote() using git remote -v to fetch remote URLs
+- Implemented parseRemoteURL() to extract GitLab remote from git output
+- Implemented extractProjectPath() supporting SSH (git@gitlab.com:group/project.git) and HTTPS (https://gitlab.com/group/project.git) formats
+- Implemented isValidProjectPath() to validate project path has at least 2 segments and no empty parts
+- Handles subgroups in project path (e.g., group/subgroup/project)
+- Added --project command-line flag to main.go for manual project selection
+- Updated main.go to call project.DetectProjectPath() after config validation
+- Display detected/selected project path in GUI status bar
+- Created comprehensive unit tests for all project detection functions
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Use exec.Command("git", "remote", "-v") to get git remote URLs
+- Parse git remote output by scanning lines and looking for "origin" entries
+- SSH format: git@gitlab.com:group/project.git - extract path after colon
+- HTTPS format: https://gitlab.com/group/project.git - extract path after host
+- Always validate project path format (must have at least 2 non-empty segments)
+- Handle missing .git suffix gracefully in HTTPS URLs
+- Use flag package for command-line argument parsing with flag.String()
+- Updated AGENTS.md with Project Context section documenting patterns
+---
+
+## Fri Jan 16 23:10:00 PM JST 2026 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created pkg/utils/logger.go for logging to ~/.local/share/lazygitlab/debug.log
+- Added --debug flag to enable verbose logging in main.go
+- Implemented loading spinner using bubbletea's spinner package
+- Added error popup with retry option in GUI model (press 'r' to retry)
+- Added SetLoading, SetError, ClearError, and SetItems helper methods to Model
+- Updated main.go to initialize logger and log config loading/validation
+- Created comprehensive tests for logger functionality
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Use github.com/charmbracelet/bubbles/spinner for loading animations in bubbletea
+- Spinner needs to be initialized with spin.New() and styled with lipgloss
+- Model.Init() should return spinner.Tick command for animation
+- Handle spin.TickMsg in Update() method to update spinner state
+- Logger pattern: create singleton with sync.Once, use mutex for thread-safe writes
+- Log directory path: filepath.Join(os.Getenv("HOME"), ".local", "share", "lazygitlab")
+- Always defer utils.Close() after InitLogger to clean up resources
+- For error popups: add state fields (showError bool, errorMessage string) to Model
+- Error popup check should be before help popup check in View() method
+- Retry functionality: check for 'r' key press in Update() when showError is true
+- Format strings in logging should use fmt.Sprintf format (e.g., "%s" not just string)
+---

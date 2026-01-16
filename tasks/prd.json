@@ -103,8 +103,8 @@
         "Manual project selection via command line flag `--project`",
         "Display current project in status bar"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "dependsOn": ["US-003", "US-004"]
     },
     {
@@ -117,8 +117,8 @@
         "Log file for debugging (`~/.local/share/lazygitlab/debug.log`)",
         "`--debug` flag to enable verbose logging"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "dependsOn": ["US-004"]
     },
     {
