@@ -34,6 +34,7 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - Use lipgloss for styling and layout management
 - Keyboard navigation: `j`/`k` for list navigation, `1`/`2`/`3` for view switching, `q` to quit
 - Status bar displays project context and connection status
+- Help popup shows all keybindings (press `?` to open, `Esc` to close)
 
 ### Component Structure
 
@@ -47,3 +48,11 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - Render methods (`renderSidebar`, `renderMainPanel`, etc.) should return styled strings
 - Always handle empty states in list views
 - Use `tea.WindowSizeMsg` to handle terminal resizing
+
+### Keyboard Navigation
+
+- Use `tea.KeyMsg` type in Update method switch statement for keyboard input
+- Key strings: `j`, `k`, `up`, `down`, `h`, `l`, `left`, `right`, `tab`, `shift+tab`, `enter`, `esc`, `q`, `?`, `ctrl+c`
+- For popup/modals: add a state field (e.g., `showHelp bool`) and check it first in Update method
+- Popup rendering: return early from View method if popup is showing, calling a dedicated render function
+- View cycling: use modulo or bounds checking for Tab/Shift+Tab to wrap around views

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type ViewMode int
@@ -23,6 +24,7 @@ type Model struct {
 	width        int
 	height       int
 	styles       *Style
+	showHelp     bool
 }
 
 type ListItem struct {
@@ -56,6 +58,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		if m.showHelp {
+			switch msg.String() {
+			case "esc", "q", "?":
+				m.showHelp = false
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -76,6 +86,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "3":
 			m.currentView = MergeRequestsView
 			m.selectedItem = 0
+		case "h", "left":
+			if m.currentView > ProjectsView {
+				m.currentView--
+				m.selectedItem = 0
+			}
+		case "l", "right":
+			if m.currentView < MergeRequestsView {
+				m.currentView++
+				m.selectedItem = 0
+			}
+		case "tab":
+			if m.currentView < MergeRequestsView {
+				m.currentView++
+				m.selectedItem = 0
+			} else {
+				m.currentView = ProjectsView
+				m.selectedItem = 0
+			}
+		case "shift+tab":
+			if m.currentView > ProjectsView {
+				m.currentView--
+				m.selectedItem = 0
+			} else {
+				m.currentView = MergeRequestsView
+				m.selectedItem = 0
+			}
+		case "enter":
+			if len(m.items) > 0 && m.selectedItem < len(m.items) {
+			}
+		case "esc":
+		case "?":
+			m.showHelp = true
 		}
 	}
 
@@ -83,6 +125,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.showHelp {
+		return m.renderHelpPopup()
+	}
+
 	sidebar := m.renderSidebar()
 	mainPanel := m.renderMainPanel()
 	detailsPanel := m.renderDetailsPanel()
@@ -185,4 +231,38 @@ func (m Model) renderStatusBar() string {
 	helpInfo := "? for help"
 
 	return m.styles.StatusBar.Render(projectInfo + " | " + connInfo + " | " + helpInfo)
+}
+
+func (m Model) renderHelpPopup() string {
+	helpContent := `Keybindings
+
+Navigation:
+  j/k or ↑/↓    Move up/down in list
+  h/l or ←/→    Switch to previous/next view
+  Tab/Shift+Tab Cycle through views
+  Enter          Select/open item
+  Esc            Close popup / go back
+
+View Switching:
+  1              Projects view
+  2              Issues view
+  3              Merge Requests view
+
+Other:
+  q              Quit
+  ?              Show this help
+
+Press Esc or ? to close
+`
+
+	helpStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("255")).
+		Padding(1, 2).
+		Width(60).
+		Align(lipgloss.Center)
+
+	return helpStyle.Render(helpContent)
 }
