@@ -8,3 +8,22 @@ Started: Fri Jan 16 09:35:05 PM JST 2026
 - Makefile targets: build, run, test, lint, clean, install
 - Always run `make build` and `make test` before committing
 - Binary output directory: bin/
+## Fri Jan 16 09:47:00 PM JST 2026 - US-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Initialized Go module (github.com/davzucky/lazygitlab)
+- Integrated bubbletea TUI framework
+- Created basic main.go with empty TUI window
+- Created Makefile with build, run, test, lint, clean, install targets
+- Created .gitignore for Go projects
+- Project compiles and runs successfully
+- Fixed .gitignore issue where "lazygitlab" pattern was ignoring cmd/lazygitlab directory (changed to /lazygitlab to only match root binary)
+
+**Learnings for future iterations:**
+- Use bubbletea framework for TUI (modern, well-maintained)
+- Project follows standard Go layout: cmd/ for entry point, pkg/ for packages
+- Makefile targets: build, run, test, lint, clean, install
+- Always run `make build` and `make test` before committing
+- Binary output directory: bin/
+- ralph.sh script expects PRD in scripts/ directory, not tasks/
+- PRD must have "branchName" field and "passes" field for each user story
+---
