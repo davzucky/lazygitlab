@@ -56,3 +56,32 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - For popup/modals: add a state field (e.g., `showHelp bool`) and check it first in Update method
 - Popup rendering: return early from View method if popup is showing, calling a dedicated render function
 - View cycling: use modulo or bounds checking for Tab/Shift+Tab to wrap around views
+
+# Project Context
+
+## pkg/project/ Package
+
+The project package handles automatic detection of GitLab project context from git remotes.
+
+### Functionality
+
+- Auto-detects project from git remote URL in current directory
+- Supports both SSH (`git@gitlab.com:group/project.git`) and HTTPS (`https://gitlab.com/group/project.git`) formats
+- Handles subgroups in project path (e.g., `group/subgroup/project`)
+- Supports manual project override via command-line flag `--project`
+- Validates project path format (must have at least 2 segments)
+
+### Patterns
+
+- Use `exec.Command("git", "remote", "-v")` to get git remote URLs
+- Parse remote URLs using regex: look for `git@gitlab.com:` for SSH and `https://gitlab.com/` for HTTPS
+- Extract project path by removing protocol, host, and `.git` suffix
+- Validate project path by ensuring it has at least 2 non-empty segments
+- Always provide graceful fallback for non-git directories or missing remotes
+
+### Integration
+
+- Import in main.go along with config and gui packages
+- Call `project.DetectProjectPath(*projectFlag)` after config validation
+- Pass detected project path to GUI model via `gui.NewModel(projectPath, connection)`
+- Display project path in status bar for user awareness

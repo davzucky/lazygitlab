@@ -1,12 +1,14 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/davzucky/lazygitlab/pkg/config"
 	"github.com/davzucky/lazygitlab/pkg/gui"
+	"github.com/davzucky/lazygitlab/pkg/project"
 )
 
 type errorModel struct {
@@ -33,6 +35,9 @@ func (m errorModel) View() string {
 }
 
 func main() {
+	projectFlag := flag.String("project", "", "Manually specify GitLab project path (e.g., group/project)")
+	flag.Parse()
+
 	cfg, err := config.Load()
 	if err != nil {
 		p := tea.NewProgram(errorModel{error: err.Error()})
@@ -50,7 +55,11 @@ func main() {
 		return
 	}
 
-	projectPath := "Not detected"
+	projectPath, err := project.DetectProjectPath(*projectFlag)
+	if err != nil {
+		projectPath = fmt.Sprintf("Detection failed: %v", err)
+	}
+
 	connection := "Connected to " + cfg.Host
 
 	model := gui.NewModel(projectPath, connection)
