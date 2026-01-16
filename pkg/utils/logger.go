@@ -9,7 +9,7 @@ import (
 
 var (
 	logger     *Logger
-	instanceMu sync.Mutex
+	instanceMu sync.RWMutex
 )
 
 type Logger struct {
@@ -23,7 +23,9 @@ func InitLogger(debug bool) error {
 	defer instanceMu.Unlock()
 
 	if logger != nil {
+		logger.mu.Lock()
 		logger.debug = debug
+		logger.mu.Unlock()
 		return nil
 	}
 
@@ -55,53 +57,68 @@ func InitLogger(debug bool) error {
 }
 
 func GetLogger() *Logger {
-	instanceMu.Lock()
-	defer instanceMu.Unlock()
+	instanceMu.RLock()
+	defer instanceMu.RUnlock()
 	return logger
 }
 
 func Debug(format string, v ...interface{}) {
-	if logger == nil || !logger.debug || logger.file == nil {
+	l := GetLogger()
+	if l == nil || !l.debug {
 		return
 	}
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	logger.file.WriteString("[DEBUG] " + fmt.Sprintf(format, v...) + "\n")
-	logger.file.Sync()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return
+	}
+	l.file.WriteString("[DEBUG] " + fmt.Sprintf(format, v...) + "\n")
+	l.file.Sync()
 }
 
 func Info(format string, v ...interface{}) {
-	if logger == nil || logger.file == nil {
+	l := GetLogger()
+	if l == nil {
 		return
 	}
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	logger.file.WriteString("[INFO] " + fmt.Sprintf(format, v...) + "\n")
-	logger.file.Sync()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return
+	}
+	l.file.WriteString("[INFO] " + fmt.Sprintf(format, v...) + "\n")
+	l.file.Sync()
 }
 
 func Error(format string, v ...interface{}) {
-	if logger == nil || logger.file == nil {
+	l := GetLogger()
+	if l == nil {
 		return
 	}
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	logger.file.WriteString("[ERROR] " + fmt.Sprintf(format, v...) + "\n")
-	logger.file.Sync()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return
+	}
+	l.file.WriteString("[ERROR] " + fmt.Sprintf(format, v...) + "\n")
+	l.file.Sync()
 }
 
 func Close() error {
 	instanceMu.Lock()
-	defer instanceMu.Unlock()
-	if logger == nil || logger.file == nil {
-		logger = nil
+	l := logger
+	logger = nil
+	instanceMu.Unlock()
+
+	if l == nil {
 		return nil
 	}
-
-	if err := logger.file.Close(); err != nil {
-		logger = nil
-		return err
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return nil
 	}
-	logger = nil
-	return nil
+	err := l.file.Close()
+	l.file = nil
+	return err
 }

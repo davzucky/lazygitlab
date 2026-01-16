@@ -3,6 +3,7 @@ package project
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -81,8 +82,8 @@ func parseRemoteURL(output, host string) (string, error) {
 				break
 			}
 
-			normalizedHost := normalizeHost(host)
-			if strings.Contains(url, normalizedHost) {
+			matchedHost := extractHost(url)
+			if matchedHost != "" && matchedHost == normalizeHost(host) {
 				remoteURL = url
 				break
 			}
@@ -147,6 +148,38 @@ func extractProjectPath(remoteURL string, host string) (string, error) {
 func normalizeHost(host string) string {
 	normalizedHost := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
 	return strings.TrimSuffix(normalizedHost, "/")
+}
+
+func extractHost(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(remoteURL, "git@") {
+		re := regexp.MustCompile(`^git@([^:]+):`)
+		matches := re.FindStringSubmatch(remoteURL)
+		if len(matches) > 1 {
+			return matches[1]
+		}
+		return ""
+	}
+
+	if !strings.HasPrefix(remoteURL, "http://") && !strings.HasPrefix(remoteURL, "https://") {
+		return ""
+	}
+
+	parsed, err := url.Parse(remoteURL)
+	if err != nil {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return ""
+	}
+
+	return host
 }
 
 func isValidProjectPath(path string) bool {
