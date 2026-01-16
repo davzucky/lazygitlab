@@ -1,6 +1,7 @@
 package project
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -39,7 +40,7 @@ func TestDetectProjectPath_Override(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := DetectProjectPath(tt.override)
+			result, err := DetectProjectPath(tt.override, "gitlab.com")
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -60,48 +61,70 @@ func TestExtractProjectPath(t *testing.T) {
 	tests := []struct {
 		name        string
 		url         string
+		host        string
 		expected    string
 		expectError bool
 	}{
 		{
 			name:        "SSH URL",
 			url:         "git@gitlab.com:group/project.git",
+			host:        "gitlab.com",
 			expected:    "group/project",
 			expectError: false,
 		},
 		{
 			name:        "SSH URL with subgroups",
 			url:         "git@gitlab.com:group/subgroup/project.git",
+			host:        "gitlab.com",
 			expected:    "group/subgroup/project",
+			expectError: false,
+		},
+		{
+			name:        "SSH URL with custom host",
+			url:         "git@gitlab.example.io:group/project.git",
+			host:        "https://gitlab.example.io",
+			expected:    "group/project",
 			expectError: false,
 		},
 		{
 			name:        "HTTPS URL",
 			url:         "https://gitlab.com/group/project.git",
+			host:        "gitlab.com",
 			expected:    "group/project",
 			expectError: false,
 		},
 		{
 			name:        "HTTPS URL with subgroups",
 			url:         "https://gitlab.com/group/subgroup/project.git",
+			host:        "gitlab.com",
 			expected:    "group/subgroup/project",
+			expectError: false,
+		},
+		{
+			name:        "HTTPS URL with custom host",
+			url:         "https://gitlab.example.io/group/project.git",
+			host:        "gitlab.example.io",
+			expected:    "group/project",
 			expectError: false,
 		},
 		{
 			name:        "HTTPS URL without .git",
 			url:         "https://gitlab.com/group/project",
+			host:        "gitlab.com",
 			expected:    "group/project",
 			expectError: false,
 		},
 		{
 			name:        "invalid format",
 			url:         "https://github.com/user/repo",
+			host:        "gitlab.com",
 			expected:    "",
 			expectError: true,
 		},
 		{
 			name:        "malformed SSH URL",
 			url:         "git@gitlab.com/project.git",
+			host:        "gitlab.com",
 			expected:    "",
 			expectError: true,
 		},
@@ -109,7 +132,7 @@ func TestExtractProjectPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := extractProjectPath(tt.url)
+			result, err := extractProjectPath(tt.url, tt.host)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -196,6 +219,13 @@ origin	https://gitlab.com/group/project.git (push)`,
 			expectError: false,
 		},
 		{
+			name: "valid HTTPS output with custom host",
+			output: `origin	https://gitlab.example.io/group/project.git (fetch)
+origin	https://gitlab.example.io/group/project.git (push)`,
+			expected:    "https://gitlab.example.io/group/project.git",
+			expectError: false,
+		},
+		{
 			name: "multiple remotes",
 			output: `origin	git@gitlab.com:group/project.git (fetch)
 origin	git@gitlab.com:group/project.git (push)
@@ -220,7 +250,12 @@ upstream	git@gitlab.com:other/repo.git (push)`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseRemoteURL(tt.output)
+			host := "gitlab.com"
+			if strings.Contains(tt.output, "gitlab.example.io") {
+				host = "https://gitlab.example.io"
+			}
+			result, err := parseRemoteURL(tt.output, host)
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")

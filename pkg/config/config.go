@@ -84,32 +84,103 @@ func loadFromGlabConfig(cfg *Config) {
 	}
 
 	configPath := filepath.Join(homeDir, ".config", "glab-cli", "config.yml")
-	file, err := os.ReadFile(configPath)
-	if err != nil {
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+
+	if err := v.ReadInConfig(); err != nil {
 		return
 	}
 
-	lines := strings.Split(string(file), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	defaultHost := v.GetString("host")
+	hosts := v.GetStringMap("hosts")
+	selectedHost, settings := pickGlabHost(defaultHost, hosts)
 
-		if strings.HasPrefix(line, "host:") {
-			host := strings.TrimSpace(strings.TrimPrefix(line, "host:"))
-			if host != "" && cfg.Host == "" {
-				cfg.Host = host
-			}
+	if selectedHost != "" {
+		token := getHostField(settings, "token")
+		apiHost := getHostField(settings, "api_host")
+		apiProtocol := getHostField(settings, "api_protocol")
+
+		if cfg.Token == "" && token != "" {
+			cfg.Token = token
 		}
 
-		if strings.HasPrefix(line, "token:") || strings.Contains(line, "token:") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				token := strings.TrimSpace(strings.Join(parts[1:], ":"))
-				if token != "" && cfg.Token == "" {
-					cfg.Token = token
-				}
+		if cfg.Host == "" {
+			if apiHost == "" {
+				apiHost = selectedHost
 			}
+			cfg.Host = ensureHostScheme(apiHost, apiProtocol)
 		}
 	}
+
+	if cfg.Token == "" {
+		if token := v.GetString("token"); token != "" {
+			cfg.Token = token
+		}
+	}
+
+	if cfg.Host == "" {
+		if host := v.GetString("host"); host != "" {
+			cfg.Host = ensureHostScheme(host, v.GetString("api_protocol"))
+		}
+	}
+}
+
+func pickGlabHost(defaultHost string, hosts map[string]interface{}) (string, interface{}) {
+	if defaultHost != "" {
+		if settings, ok := hosts[defaultHost]; ok {
+			return defaultHost, settings
+		}
+	}
+
+	if len(hosts) == 1 {
+		for host, settings := range hosts {
+			return host, settings
+		}
+	}
+
+	for host, settings := range hosts {
+		if getHostField(settings, "token") != "" {
+			return host, settings
+		}
+	}
+
+	return "", nil
+}
+
+func getHostField(settings interface{}, key string) string {
+	if settings == nil {
+		return ""
+	}
+
+	switch typed := settings.(type) {
+	case map[string]interface{}:
+		if value, ok := typed[key]; ok {
+			return fmt.Sprint(value)
+		}
+	case map[interface{}]interface{}:
+		if value, ok := typed[key]; ok {
+			return fmt.Sprint(value)
+		}
+	}
+
+	return ""
+}
+
+func ensureHostScheme(host, protocol string) string {
+	if host == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		return strings.TrimSuffix(host, "/")
+	}
+
+	if protocol == "" {
+		protocol = "https"
+	}
+
+	return fmt.Sprintf("%s://%s", protocol, strings.TrimSuffix(host, "/"))
 }
 
 func (c *Config) isValid() bool {

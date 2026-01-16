@@ -9,11 +9,7 @@ import (
 	"strings"
 )
 
-const (
-	gitlabHost = "gitlab.com"
-)
-
-func DetectProjectPath(overridePath string) (string, error) {
+func DetectProjectPath(overridePath, host string) (string, error) {
 	if overridePath != "" {
 		if !isValidProjectPath(overridePath) {
 			return "", fmt.Errorf("invalid project path format: %s (expected: group/project or group/subgroup/project)", overridePath)
@@ -21,7 +17,7 @@ func DetectProjectPath(overridePath string) (string, error) {
 		return overridePath, nil
 	}
 
-	projectPath, err := detectFromGitRemote()
+	projectPath, err := detectFromGitRemote(host)
 	if err != nil {
 		return "", err
 	}
@@ -29,7 +25,7 @@ func DetectProjectPath(overridePath string) (string, error) {
 	return projectPath, nil
 }
 
-func detectFromGitRemote() (string, error) {
+func detectFromGitRemote(host string) (string, error) {
 	gitDir := ".git"
 	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 		return "", fmt.Errorf("not a git repository (or any parent up to mount point)")
@@ -41,12 +37,12 @@ func detectFromGitRemote() (string, error) {
 		return "", fmt.Errorf("failed to get git remotes: %w", err)
 	}
 
-	remoteURL, err := parseRemoteURL(string(output))
+	remoteURL, err := parseRemoteURL(string(output), host)
 	if err != nil {
 		return "", err
 	}
 
-	projectPath, err := extractProjectPath(remoteURL)
+	projectPath, err := extractProjectPath(remoteURL, host)
 	if err != nil {
 		return "", err
 	}
@@ -54,7 +50,7 @@ func detectFromGitRemote() (string, error) {
 	return projectPath, nil
 }
 
-func parseRemoteURL(output string) (string, error) {
+func parseRemoteURL(output, host string) (string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	var remoteURL string
 
@@ -71,9 +67,17 @@ func parseRemoteURL(output string) (string, error) {
 
 		url := parts[1]
 
-		if strings.Contains(url, gitlabHost) && strings.HasPrefix(line, "origin") {
-			remoteURL = url
-			break
+		if strings.HasPrefix(line, "origin") {
+			if host == "" {
+				remoteURL = url
+				break
+			}
+
+			normalizedHost := normalizeHost(host)
+			if strings.Contains(url, normalizedHost) {
+				remoteURL = url
+				break
+			}
 		}
 	}
 
@@ -84,32 +88,56 @@ func parseRemoteURL(output string) (string, error) {
 	return remoteURL, nil
 }
 
-func extractProjectPath(url string) (string, error) {
-	var projectPath string
-
-	if strings.HasPrefix(url, "git@") {
-		re := regexp.MustCompile(`git@` + regexp.QuoteMeta(gitlabHost) + `:(.+)\.git$`)
-		matches := re.FindStringSubmatch(url)
-		if len(matches) < 2 {
-			return "", fmt.Errorf("invalid SSH remote URL format: %s", url)
-		}
-		projectPath = matches[1]
-	} else if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		re := regexp.MustCompile(`https?://` + regexp.QuoteMeta(gitlabHost) + `/([^/]+/.+)$`)
-		matches := re.FindStringSubmatch(url)
-		if len(matches) < 2 {
-			return "", fmt.Errorf("invalid HTTPS remote URL format: %s", url)
-		}
-		projectPath = strings.TrimSuffix(matches[1], ".git")
-	} else {
-		return "", fmt.Errorf("unsupported remote URL format: %s", url)
+func extractProjectPath(remoteURL string, host string) (string, error) {
+	if remoteURL == "" {
+		return "", fmt.Errorf("remote URL is empty")
 	}
 
-	if !isValidProjectPath(projectPath) {
-		return "", fmt.Errorf("invalid project path: %s", projectPath)
+	if strings.HasPrefix(remoteURL, "git@") {
+		parts := strings.SplitN(remoteURL, ":", 2)
+		if len(parts) != 2 {
+			return "", fmt.Errorf("invalid SSH remote URL format: %s", remoteURL)
+		}
+
+		hostPart := strings.TrimPrefix(parts[0], "git@")
+		normalizedHost := normalizeHost(host)
+		if normalizedHost != "" && hostPart != normalizedHost {
+			return "", fmt.Errorf("remote host %s does not match configured host %s", hostPart, normalizedHost)
+		}
+
+		projectPath := strings.TrimSuffix(parts[1], ".git")
+		if !isValidProjectPath(projectPath) {
+			return "", fmt.Errorf("invalid project path: %s", projectPath)
+		}
+		return projectPath, nil
 	}
 
-	return projectPath, nil
+	if strings.HasPrefix(remoteURL, "http://") || strings.HasPrefix(remoteURL, "https://") {
+		re := regexp.MustCompile(`^https?://([^/]+)/(.+)$`)
+		matches := re.FindStringSubmatch(remoteURL)
+		if len(matches) < 3 {
+			return "", fmt.Errorf("invalid HTTPS remote URL format: %s", remoteURL)
+		}
+
+		remoteHost := matches[1]
+		normalizedHost := normalizeHost(host)
+		if normalizedHost != "" && remoteHost != normalizedHost {
+			return "", fmt.Errorf("remote host %s does not match configured host %s", remoteHost, normalizedHost)
+		}
+
+		projectPath := strings.TrimSuffix(matches[2], ".git")
+		if !isValidProjectPath(projectPath) {
+			return "", fmt.Errorf("invalid project path: %s", projectPath)
+		}
+		return projectPath, nil
+	}
+
+	return "", fmt.Errorf("unsupported remote URL format: %s", remoteURL)
+}
+
+func normalizeHost(host string) string {
+	normalizedHost := strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
+	return strings.TrimSuffix(normalizedHost, "/")
 }
 
 func isValidProjectPath(path string) bool {

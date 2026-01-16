@@ -68,7 +68,7 @@ func main() {
 
 	utils.Info("Configuration validated successfully")
 
-	projectPath, err := project.DetectProjectPath(*projectFlag)
+	projectPath, err := project.DetectProjectPath(*projectFlag, cfg.Host)
 	if err != nil {
 		utils.Error("Failed to detect project path: %v", err)
 		projectPath = fmt.Sprintf("Detection failed: %v", err)
