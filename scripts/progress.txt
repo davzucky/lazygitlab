@@ -70,3 +70,58 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Always use interface-based design for external API clients to enable mocking in tests
 - pkg/gitlab/ package provides abstraction layer over GitLab API
 ---
+
+## Fri Jan 16 22:16:00 PM JST 2026 - US-004
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created main application layout with multi-panel TUI design at pkg/gui/
+- Implemented three-panel layout: sidebar (navigation), main panel (list view), details panel (preview)
+- Created styles.go with lipgloss styling for borders, colors, and padding
+- Created model.go with Bubbletea Model implementation (Init, Update, View methods)
+- Implemented ViewMode enum to track current view (ProjectsView, IssuesView, MergeRequestsView)
+- Left sidebar with navigation options (Projects, Issues, Merge Requests) with visual active state
+- Main panel showing list of selected entity type with selection indicator
+- Details panel showing ID and title of selected item
+- Status bar showing current project path and connection status
+- Keyboard navigation: j/k for up/down, 1/2/3 for view switching, q to quit
+- Updated main.go to use new GUI model with tea.WithAltScreen()
+- Updated .gitignore to include bin/ directory
+- Updated AGENTS.md with GUI Framework section documenting architecture and patterns
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- pkg/gui/ package uses bubbletea framework for TUI with lipgloss for styling
+- Layout consists of three panels: sidebar (navigation), main (list), details (preview)
+- Use lipgloss.NewStyle() for creating reusable style components with borders, colors, padding
+- ViewMode enum tracks which panel/view is active (ProjectsView, IssuesView, MergeRequestsView)
+- Bubbletea models require Init(), Update(), and View() methods
+- Use tea.WindowSizeMsg to handle terminal resizing dynamically
+- tea.WithAltScreen() enables full-screen TUI mode
+- Render methods return styled strings; use lipgloss for all styling
+- Always handle empty states in list views to avoid index errors
+- Format integers with fmt.Sprintf() when converting to strings (not string(rune(id)))
+---
+
+## Fri Jan 16 22:33:27 PM JST 2026 - US-005
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added showHelp boolean state field to Model for help popup
+- Implemented h/l keys for view switching (previous/next)
+- Implemented Tab/Shift+Tab for view cycling (with wrap-around)
+- Added Enter key handler for selecting/opening items
+- Added Esc key handler for closing popups
+- Added ? key to show help/keybindings popup
+- Created renderHelpPopup() method with styled help content
+- Updated View() method to conditionally show help popup
+- Updated Update() method to handle popup state first before normal key processing
+- Help popup can be closed with Esc, q, or ?
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Add state fields (e.g., showHelp bool) to Model to track popup/modal visibility
+- Check popup state first in Update() before processing other key messages
+- Return early from View() when popup is showing, calling dedicated render function
+- Use lipgloss.NewStyle() for popup styling with borders, background, foreground, and padding
+- View cycling: use bounds checking to wrap around to the beginning/end when using Tab/Shift+Tab
+- Key strings: h, l, tab, shift+tab, enter, esc, q, ? for navigation and control
+- Updated AGENTS.md with Keyboard Navigation section documenting key patterns
+- For popups: check state in Update first, then render with dedicated method in View
+---

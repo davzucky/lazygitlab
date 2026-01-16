@@ -73,8 +73,8 @@
         "Bottom panel showing details/preview of selected item",
         "Status bar showing current project/context and connection status"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "dependsOn": ["US-001"]
     },
     {
@@ -88,8 +88,8 @@
         "`q` to quit, `?` to show help/keybindings popup",
         "Tab/Shift+Tab for panel cycling"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "completed",
+      "passes": true,
       "dependsOn": ["US-004"]
     },
     {
