@@ -166,6 +166,15 @@ The utils package provides shared utility functions, including logging functiona
  - Use runtime.GOOS to detect operating system at runtime
  - Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
 
+### Browser Utilities
+
+ - OpenInBrowser function provides cross-platform browser opening
+ - Uses OS-specific commands: xdg-open (Linux), open (macOS), start (Windows)
+ - For Linux: uses cmd.Start() instead of cmd.Run() for xdg-open to avoid blocking
+ - Returns helpful error message when xdg-open is not installed on Linux
+ - Use runtime.GOOS to detect operating system at runtime
+ - Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
+
 
 # Loading and Error States
 

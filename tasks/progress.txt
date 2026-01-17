@@ -141,8 +141,25 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - OS detection: use runtime.GOOS to detect Linux, Darwin, Windows at runtime
 - Clipboard tools: xclip on Linux (selection clipboard), pbcopy on macOS, clip on Windows
 - Error handling: check exec.Error type to detect if command was not found (e.g., xclip not installed)
-- Test short mode: use testing.Short() to skip integration tests that require external tools
+ - Test short mode: use testing.Short() to skip integration tests that require external tools
 - Import utils package in GUI to access clipboard functionality
+- Issue URL format: https://gitlab.com/{projectPath}/-/issues/{issueIID}
+---
+
+## 2026-01-17 - US-013
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Created pkg/utils/browser.go with OS-specific browser open functions (xdg-open for Linux, open for macOS, start for Windows)
+- Added 'b' key handler in IssuesView to open issue URL in default browser
+- Added error handling with SetError() if browser launch fails
+- No success message needed since browser opening is visible to user
+- Files changed: pkg/utils/browser.go (new), pkg/gui/model.go (modified)
+
+**Learnings for future iterations:**
+- Browser utilities follow same pattern as clipboard utilities: OS detection with runtime.GOOS, separate function for each OS
+- For Linux: use xdg-open command with cmd.Start() (non-blocking) instead of cmd.Run() (blocking)
+- Error handling: check exec.Error type to detect if command was not found (e.g., xdg-utils not installed)
+- User feedback: not needed for successful browser open since it's visible, only show error on failure
+- Import utils package in GUI to access browser functionality
 - Issue URL format: https://gitlab.com/{projectPath}/-/issues/{issueIID}
 ---
 
