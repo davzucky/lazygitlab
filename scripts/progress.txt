@@ -15,3 +15,24 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - GitLab SDK method signature: (s *IssuesService) GetIssue(pid any, issue int64, options ...RequestOptionFunc)
 - Always add both interface method and mock implementation when adding new API methods
 - Issue IID is internal ID within a project, different from global ID
+
+---
+## Sat Jan 17 2026 - US-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added State and UpdatedAt fields to ListItem struct
+- Added imports for sort, strings, time, and gitlab SDK
+- Updated renderMainPanel to show issue-specific format: state icon + IID + truncated title
+- State icon: ● for open, ○ for closed
+- Added IssuesToListItems helper function to convert gitlab.Issue to ListItem
+- Implemented sorting by UpdatedAt descending
+- Added truncateString helper for title truncation (max 60 chars)
+- Updated renderDetailsPanel to show issue-specific details when in IssuesView
+- Updated empty state message for issues ("No issues found")
+- All acceptance criteria met
+
+**Learnings for future iterations:**
+- Use state icons (●/○) instead of text for more compact display
+- truncateString with "... " suffix is better than simple truncation
+- sort.Slice with After() comparison for descending date order
+- ListItem struct can be extended with more fields without breaking existing code
+- Current view checking (m.currentView == IssuesView) allows conditional rendering
