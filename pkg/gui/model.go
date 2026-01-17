@@ -405,12 +405,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.Type {
 			case tea.KeyBackspace:
 				if m.issueFormField == "title" {
-					if len(m.issueFormTitle) > 0 {
-						m.issueFormTitle = m.issueFormTitle[:len(m.issueFormTitle)-1]
+					runes := []rune(m.issueFormTitle)
+					if len(runes) > 0 {
+						m.issueFormTitle = string(runes[:len(runes)-1])
 					}
 				} else {
-					if len(m.issueFormDesc) > 0 {
-						m.issueFormDesc = m.issueFormDesc[:len(m.issueFormDesc)-1]
+					runes := []rune(m.issueFormDesc)
+					if len(runes) > 0 {
+						m.issueFormDesc = string(runes[:len(runes)-1])
 					}
 				}
 			case tea.KeyRunes:
@@ -441,8 +443,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			if msg.Type == tea.KeyBackspace {
-				if len(m.commentFormBody) > 0 {
-					m.commentFormBody = m.commentFormBody[:len(m.commentFormBody)-1]
+				runes := []rune(m.commentFormBody)
+				if len(runes) > 0 {
+					m.commentFormBody = string(runes[:len(runes)-1])
 				}
 			} else if msg.Type == tea.KeyRunes {
 				m.commentFormBody += string(msg.Runes)
@@ -912,7 +915,7 @@ Press Esc or ? to close
 }
 
 func (m Model) renderErrorPopup() string {
-	errorContent := fmt.Sprintf("Error\n\n%s\n\nPress r to retry\nPress q or Esc to close", m.errorMessage)
+	errorContent := fmt.Sprintf("Error\n\n%s\n\nPress q or Esc to close", m.errorMessage)
 
 	errorStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
