@@ -93,29 +93,42 @@ type commentsLoadedErrMsg struct {
 	err error
 }
 
+type issueCreatedMsg struct {
+	issue *gitlab.Issue
+}
+
+type issueCreatedErrMsg struct {
+	err error
+}
+
 type Model struct {
-	currentView      ViewMode
-	items            []ListItem
-	selectedItem     int
-	projectPath      string
-	connection       string
-	width            int
-	height           int
-	styles           *Style
-	showHelp         bool
-	showError        bool
-	errorMessage     string
-	isLoading        bool
-	spinner          spin.Model
-	selectedIssue    *gitlab.Issue
-	issueFilter      IssueFilterState
-	detailSection    DetailSection
-	selectedComments []*gitlab.Note
-	client           gitlabClient
+	currentView         ViewMode
+	items               []ListItem
+	selectedItem        int
+	projectPath         string
+	connection          string
+	width               int
+	height              int
+	styles              *Style
+	showHelp            bool
+	showError           bool
+	errorMessage        string
+	isLoading           bool
+	spinner             spin.Model
+	selectedIssue       *gitlab.Issue
+	issueFilter         IssueFilterState
+	detailSection       DetailSection
+	selectedComments    []*gitlab.Note
+	client              gitlabClient
+	showCreateIssueForm bool
+	issueFormTitle      string
+	issueFormDesc       string
+	issueFormField      string
 }
 
 type gitlabClient interface {
 	GetIssueNotes(projectPath string, issueIID int64, opts *gl.GetIssueNotesOptions) ([]*gitlab.Note, error)
+	CreateIssue(projectPath string, opts *gl.CreateIssueOptions) (*gitlab.Issue, error)
 }
 
 type ListItem struct {
@@ -137,22 +150,26 @@ func NewModel(projectPath string, connection string, client gitlabClient) Model 
 	spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
 
 	return Model{
-		currentView:      ProjectsView,
-		items:            []ListItem{},
-		selectedItem:     0,
-		projectPath:      projectPath,
-		connection:       connection,
-		width:            80,
-		height:           24,
-		styles:           styles,
-		showError:        false,
-		errorMessage:     "",
-		isLoading:        false,
-		spinner:          spinner,
-		issueFilter:      FilterAll,
-		detailSection:    DescriptionSection,
-		selectedComments: []*gitlab.Note{},
-		client:           client,
+		currentView:         ProjectsView,
+		items:               []ListItem{},
+		selectedItem:        0,
+		projectPath:         projectPath,
+		connection:          connection,
+		width:               80,
+		height:              24,
+		styles:              styles,
+		showError:           false,
+		errorMessage:        "",
+		isLoading:           false,
+		spinner:             spinner,
+		issueFilter:         FilterAll,
+		detailSection:       DescriptionSection,
+		selectedComments:    []*gitlab.Note{},
+		client:              client,
+		showCreateIssueForm: false,
+		issueFormTitle:      "",
+		issueFormDesc:       "",
+		issueFormField:      "title",
 	}
 }
 
@@ -170,6 +187,20 @@ func loadCommentsCmd(projectPath string, issueIID int64, client gitlabClient) te
 	}
 }
 
+func createIssueCmd(projectPath, title, description string, client gitlabClient) tea.Cmd {
+	return func() tea.Msg {
+		opts := &gl.CreateIssueOptions{
+			Title:       title,
+			Description: description,
+		}
+		issue, err := client.CreateIssue(projectPath, opts)
+		if err != nil {
+			return issueCreatedErrMsg{err: err}
+		}
+		return issueCreatedMsg{issue: issue}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case commentsLoadedMsg:
@@ -178,6 +209,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case commentsLoadedErrMsg:
 		m.SetError(fmt.Sprintf("Failed to load comments: %v", msg.err))
+		m.isLoading = false
+		return m, nil
+	case issueCreatedMsg:
+		m.showCreateIssueForm = false
+		m.isLoading = false
+		m.issueFormTitle = ""
+		m.issueFormDesc = ""
+		m.issueFormField = "title"
+		return m, nil
+	case issueCreatedErrMsg:
+		m.SetError(fmt.Sprintf("Failed to create issue: %v", msg.err))
+		m.showCreateIssueForm = false
 		m.isLoading = false
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -190,6 +233,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
+		if m.showCreateIssueForm {
+			switch msg.String() {
+			case "esc":
+				m.showCreateIssueForm = false
+				m.issueFormTitle = ""
+				m.issueFormDesc = ""
+				m.issueFormField = "title"
+			case "tab":
+				if m.issueFormField == "title" {
+					m.issueFormField = "description"
+				} else {
+					m.issueFormField = "title"
+				}
+			case "ctrl+enter":
+				if m.issueFormTitle == "" {
+					m.SetError("Title is required")
+					return m, nil
+				}
+				m.isLoading = true
+				return m, createIssueCmd(m.projectPath, m.issueFormTitle, m.issueFormDesc, m.client)
+			case "enter":
+				if m.issueFormField == "title" {
+					m.issueFormField = "description"
+				}
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+			if len(msg.String()) == 1 && msg.String() != "c" {
+				if m.issueFormField == "title" {
+					if msg.Type == tea.KeyBackspace {
+						if len(m.issueFormTitle) > 0 {
+							m.issueFormTitle = m.issueFormTitle[:len(m.issueFormTitle)-1]
+						}
+					} else if msg.Type == tea.KeyRunes {
+						m.issueFormTitle += string(msg.Runes)
+					}
+				} else {
+					if msg.Type == tea.KeyBackspace {
+						if len(m.issueFormDesc) > 0 {
+							m.issueFormDesc = m.issueFormDesc[:len(m.issueFormDesc)-1]
+						}
+					} else if msg.Type == tea.KeyRunes {
+						m.issueFormDesc += string(msg.Runes)
+					}
+				}
+			}
+			return m, nil
+		}
 		if m.showError {
 			switch msg.String() {
 			case "r":
@@ -275,6 +366,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == IssuesView {
 				m.issueFilter = (m.issueFilter + 1) % 3
 			}
+		case "c":
+			if m.currentView == IssuesView {
+				m.showCreateIssueForm = true
+				m.issueFormTitle = ""
+				m.issueFormDesc = ""
+				m.issueFormField = "title"
+			}
 		}
 	}
 
@@ -282,6 +380,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.showCreateIssueForm {
+		return m.renderCreateIssueForm()
+	}
+
 	if m.showError {
 		return m.renderErrorPopup()
 	}
@@ -627,4 +729,56 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func (m Model) renderCreateIssueForm() string {
+	titleFieldStyle := m.styles.Sidebar
+	descFieldStyle := m.styles.Sidebar
+	if m.issueFormField == "title" {
+		titleFieldStyle = m.styles.SidebarActive
+	} else {
+		descFieldStyle = m.styles.SidebarActive
+	}
+
+	titleInput := titleFieldStyle.Render("Title (required):") + "\n"
+	if m.issueFormField == "title" {
+		titleInput += "  " + m.issueFormTitle + "_"
+	} else {
+		titleInput += "  " + m.issueFormTitle
+	}
+
+	descInput := descFieldStyle.Render("Description (optional):") + "\n"
+	maxDescLines := 5
+	descLines := strings.Split(m.issueFormDesc, "\n")
+	for i, line := range descLines {
+		if i >= maxDescLines {
+			break
+		}
+		if i == len(descLines)-1 && m.issueFormField == "description" && len(descLines) < maxDescLines {
+			descInput += "  " + line + "_\n"
+		} else {
+			descInput += "  " + line + "\n"
+		}
+	}
+	if m.issueFormField == "description" && len(descLines) >= maxDescLines {
+		descInput += "  _\n"
+	}
+
+	formContent := "Create New Issue\n\n" +
+		titleInput + "\n\n" +
+		descInput + "\n" +
+		"  Press Tab to switch fields\n" +
+		"  Press Ctrl+Enter to submit\n" +
+		"  Press Esc to cancel"
+
+	formStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("255")).
+		Padding(1, 2).
+		Width(80).
+		Align(lipgloss.Center)
+
+	return formStyle.Render(formContent)
 }
