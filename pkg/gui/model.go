@@ -20,6 +20,40 @@ const (
 	MergeRequestsView
 )
 
+type IssueFilterState int
+
+const (
+	FilterAll IssueFilterState = iota
+	FilterOpen
+	FilterClosed
+)
+
+func (f IssueFilterState) String() string {
+	switch f {
+	case FilterAll:
+		return "All"
+	case FilterOpen:
+		return "Open"
+	case FilterClosed:
+		return "Closed"
+	default:
+		return "All"
+	}
+}
+
+func (f IssueFilterState) ToAPIState() string {
+	switch f {
+	case FilterAll:
+		return ""
+	case FilterOpen:
+		return "opened"
+	case FilterClosed:
+		return "closed"
+	default:
+		return ""
+	}
+}
+
 type issuesLoadedMsg struct {
 	issues []*gitlab.Issue
 }
@@ -47,6 +81,7 @@ type Model struct {
 	isLoading     bool
 	spinner       spin.Model
 	selectedIssue *gitlab.Issue
+	issueFilter   IssueFilterState
 }
 
 type ListItem struct {
@@ -80,6 +115,7 @@ func NewModel(projectPath string, connection string) Model {
 		errorMessage: "",
 		isLoading:    false,
 		spinner:      spinner,
+		issueFilter:  FilterAll,
 	}
 }
 
@@ -172,6 +208,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 		case "?":
 			m.showHelp = true
+		case "f":
+			if m.currentView == IssuesView {
+				m.issueFilter = (m.issueFilter + 1) % 3
+			}
 		}
 	}
 
@@ -349,7 +389,12 @@ func (m Model) renderStatusBar() string {
 	connInfo := "Connection: " + m.connection
 	helpInfo := "? for help"
 
-	return m.styles.StatusBar.Render(projectInfo + " | " + connInfo + " | " + helpInfo)
+	status := projectInfo + " | " + connInfo + " | " + helpInfo
+	if m.currentView == IssuesView {
+		status += " | Filter: " + m.issueFilter.String()
+	}
+
+	return m.styles.StatusBar.Render(status)
 }
 
 func (m Model) renderHelpPopup() string {

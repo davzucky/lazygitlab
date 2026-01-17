@@ -57,6 +57,22 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - For popup/modals: add a state field (e.g., `showHelp bool`) and check it first in Update method
 - Popup rendering: return early from View method if popup is showing, calling a dedicated render function
 - View cycling: use modulo or bounds checking for Tab/Shift+Tab to wrap around views
+- For view-specific actions (e.g., filtering issues), check `currentView` before handling the key press: `if m.currentView == IssuesView { ... }`
+
+### View-Specific State Management
+
+- Add view-specific state fields to the Model struct (e.g., `issueFilter IssueFilterState`)
+- Initialize all new state fields in `NewModel()` constructor function
+- Define enum types for state values with String() method for display
+- If state needs API conversion, add ToAPIState() or similar method
+- Use modulo operator for cycling through enum values: `state = (state + 1) % count`
+
+### Status Bar Display
+
+- Status bar displays project context and connection status
+- Add view-specific information conditionally using currentView check
+- Pattern: `if m.currentView == IssuesView { status += " | Filter: " + m.issueFilter.String() }`
+- Keep status bar information concise to avoid cluttering the UI
 
 ### Data Display
 
