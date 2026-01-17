@@ -10,6 +10,7 @@ type Client interface {
 	GetCurrentUser() (*gitlab.User, error)
 	GetProject(projectPath string) (*gitlab.Project, error)
 	GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitlab.Issue, error)
+	GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error)
 	GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error)
 	Close() error
 }
@@ -107,6 +108,17 @@ func (c *client) GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitla
 	}
 
 	return allIssues, nil
+}
+
+func (c *client) GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error) {
+	issue, _, err := c.client.Issues.GetIssue(projectPath, issueIID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get issue %d from project %s: %w", issueIID, projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("issue not found: %d", issueIID)
+	}
+	return issue, nil
 }
 
 func (c *client) GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error) {

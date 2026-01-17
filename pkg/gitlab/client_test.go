@@ -11,10 +11,12 @@ type mockClient struct {
 	user         *gitlab.User
 	project      *gitlab.Project
 	issues       []*gitlab.Issue
+	issue        *gitlab.Issue
 	mergeReqs    []*gitlab.BasicMergeRequest
 	userErr      error
 	projectErr   error
 	issuesErr    error
+	issueErr     error
 	mergeReqsErr error
 }
 
@@ -28,6 +30,10 @@ func (m *mockClient) GetProject(projectPath string) (*gitlab.Project, error) {
 
 func (m *mockClient) GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitlab.Issue, error) {
 	return m.issues, m.issuesErr
+}
+
+func (m *mockClient) GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error) {
+	return m.issue, m.issueErr
 }
 
 func (m *mockClient) GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error) {

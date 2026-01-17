@@ -16,6 +16,7 @@ The gitlab package provides an abstraction layer over GitLab's Go SDK (gitlab.co
 - `ListProjectMergeRequests` returns `[]*gitlab.BasicMergeRequest`, not `[]*gitlab.MergeRequest`
 - Pagination fields (Page, PerPage) are `int64`, not `int`
 - String options need pointer to string (`&str`), not a helper function like `gitlab.String()`
+- Issue IID (internal ID) is `int64`, used for getting single issues via `GetProjectIssue`
 
 ### Testing
 
