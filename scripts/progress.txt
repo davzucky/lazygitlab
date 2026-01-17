@@ -1,0 +1,17 @@
+# Ralph Progress Log
+Started: Sat Jan 17 10:11:48 AM JST 2026
+---
+## Sat Jan 17 10:14:55 AM JST 2026 - US-003
+- Extended ListItem struct to include full issue details: description, author, created date, labels, assignees, milestone
+- Updated IssuesToListItems() to populate all new fields from gitlab.Issue objects
+- Enhanced renderDetailsPanel() to display comprehensive issue information with conditional field display
+- Implemented description truncation with scroll hint for long content
+- Updated AGENTS.md with Data Display patterns for extending ListItem and rendering details
+
+**Learnings for future iterations:**
+- When extending ListItem struct, always update the corresponding *ToListItems conversion function to populate new fields
+- GitLab API provides rich data (author, labels, assignees, milestone) - use gitlab.Issue type directly to access all fields
+- Use conditional checks (e.g., `if len(item.Assignees) > 0`) to display optional fields in UI
+- For multi-line text content, use strings.Split() to break into individual lines and implement line count limits with scroll hints
+- The Details Panel height in styles.go is currently set to 10, which may need adjustment for longer content displays
+---
