@@ -110,6 +110,14 @@ type issueUpdatedErrMsg struct {
 	err error
 }
 
+type commentCreatedMsg struct {
+	comment *gitlab.Note
+}
+
+type commentCreatedErrMsg struct {
+	err error
+}
+
 type clipboardClearMsg struct{}
 
 type Model struct {
@@ -139,10 +147,13 @@ type Model struct {
 	confirmAction       string
 	confirmIssueIID     int64
 	clipboardMessage    string
+	showCommentForm     bool
+	commentFormBody     string
 }
 
 type gitlabClient interface {
 	GetIssueNotes(projectPath string, issueIID int64, opts *gl.GetIssueNotesOptions) ([]*gitlab.Note, error)
+	CreateIssueNote(projectPath string, issueIID int64, opts *gl.CreateIssueNoteOptions) (*gitlab.Note, error)
 	CreateIssue(projectPath string, opts *gl.CreateIssueOptions) (*gitlab.Issue, error)
 	UpdateIssue(projectPath string, issueIID int64, opts *gl.UpdateIssueOptions) (*gitlab.Issue, error)
 }
@@ -233,6 +244,19 @@ func updateIssueCmd(projectPath string, issueIID int64, stateEvent string, clien
 	}
 }
 
+func createCommentCmd(projectPath string, issueIID int64, body string, client gitlabClient) tea.Cmd {
+	return func() tea.Msg {
+		opts := &gl.CreateIssueNoteOptions{
+			Body: body,
+		}
+		comment, err := client.CreateIssueNote(projectPath, issueIID, opts)
+		if err != nil {
+			return commentCreatedErrMsg{err: err}
+		}
+		return commentCreatedMsg{comment: comment}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case commentsLoadedMsg:
@@ -275,6 +299,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.showConfirmPopup = false
 		m.confirmAction = ""
 		m.confirmIssueIID = 0
+		m.isLoading = false
+		return m, nil
+	case commentCreatedMsg:
+		m.showCommentForm = false
+		m.commentFormBody = ""
+		m.isLoading = false
+		if len(m.items) > 0 && m.selectedItem < len(m.items) && m.currentView == IssuesView {
+			item := m.items[m.selectedItem]
+			return m, loadCommentsCmd(m.projectPath, int64(item.ID), m.client)
+		}
+		return m, nil
+	case commentCreatedErrMsg:
+		m.SetError(fmt.Sprintf("Failed to create comment: %v", msg.err))
+		m.showCommentForm = false
+		m.commentFormBody = ""
 		m.isLoading = false
 		return m, nil
 	case clipboardClearMsg:
@@ -335,6 +374,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.issueFormDesc += string(msg.Runes)
 					}
 				}
+			}
+			return m, nil
+		}
+		if m.showCommentForm {
+			switch msg.String() {
+			case "esc":
+				m.showCommentForm = false
+				m.commentFormBody = ""
+			case "ctrl+enter":
+				if m.commentFormBody == "" {
+					m.SetError("Comment body is required")
+					return m, nil
+				}
+				if len(m.items) > 0 && m.selectedItem < len(m.items) {
+					item := m.items[m.selectedItem]
+					m.isLoading = true
+					return m, createCommentCmd(m.projectPath, int64(item.ID), m.commentFormBody, m.client)
+				}
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+			if msg.Type == tea.KeyBackspace {
+				if len(m.commentFormBody) > 0 {
+					m.commentFormBody = m.commentFormBody[:len(m.commentFormBody)-1]
+				}
+			} else if msg.Type == tea.KeyRunes {
+				m.commentFormBody += string(msg.Runes)
 			}
 			return m, nil
 		}
@@ -478,6 +544,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.SetError(fmt.Sprintf("Failed to open browser: %v", err))
 				}
 			}
+		case "r":
+			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) && m.detailSection == CommentsSection {
+				m.showCommentForm = true
+				m.commentFormBody = ""
+			}
 		}
 	}
 
@@ -487,6 +558,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.showCreateIssueForm {
 		return m.renderCreateIssueForm()
+	}
+
+	if m.showCommentForm {
+		return m.renderCommentForm()
 	}
 
 	if m.showConfirmPopup {
@@ -912,4 +987,41 @@ func (m Model) renderConfirmPopup() string {
 		Align(lipgloss.Center)
 
 	return confirmStyle.Render(confirmText)
+}
+
+func (m Model) renderCommentForm() string {
+	maxBodyLines := 10
+	bodyLines := strings.Split(m.commentFormBody, "\n")
+
+	bodyInput := ""
+	for i, line := range bodyLines {
+		if i >= maxBodyLines {
+			break
+		}
+		if i == len(bodyLines)-1 {
+			bodyInput += "  " + line + "_\n"
+		} else {
+			bodyInput += "  " + line + "\n"
+		}
+	}
+	if len(bodyLines) >= maxBodyLines {
+		bodyInput += "  _\n"
+	}
+
+	formContent := "Add Comment\n\n" +
+		"Body:\n\n" +
+		bodyInput + "\n" +
+		"  Press Ctrl+Enter to submit\n" +
+		"  Press Esc to cancel"
+
+	formStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("255")).
+		Padding(1, 2).
+		Width(80).
+		Align(lipgloss.Center)
+
+	return formStyle.Render(formContent)
 }
