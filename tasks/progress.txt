@@ -163,3 +163,30 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Issue URL format: https://gitlab.com/{projectPath}/-/issues/{issueIID}
 ---
 
+## 2026-01-17 - US-014
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added CreateIssueNote method to gitlabClient interface in GUI package
+- Added commentCreatedMsg and commentCreatedErrMsg message types for async comment creation
+- Added showCommentForm and commentFormBody fields to Model for comment form state
+- Created createCommentCmd() function to handle async API call
+- Updated Update() method to handle comment form key events:
+  - Esc cancels the form
+  - Ctrl+Enter submits the form
+  - Regular characters are added to the comment body
+  - Backspace removes characters from comment body
+- Added 'r' key handler in IssuesView (CommentsSection only) to open comment form
+- Updated View() method to show comment form popup when active
+- Created renderCommentForm() method to render the form with multiline text input
+- After successful creation, form closes, fields reset, and comments are reloaded
+- Files changed: pkg/gui/model.go (modified)
+
+**Learnings for future iterations:**
+- Follow async pattern for API calls: create Msg type, create Cmd function, handle in Update method
+- Comment form only shows when in IssuesView with an issue selected and in CommentsSection
+- Multiline text input handling: use strings.Split to manage lines, show cursor placeholder (_) at end
+- After successful comment creation, reload comments to show new comment in list
+- Form validation (e.g., required body check) happens in submit handler, not during input
+- Reset all form fields when closing form (both on cancel and successful submit)
+- Check m.detailSection == CommentsSection before showing comment form to ensure proper context
+---
+

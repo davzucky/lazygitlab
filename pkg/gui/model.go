@@ -813,7 +813,22 @@ Navigation:
 View Switching:
   1              Projects view
   2              Issues view
-  3              Merge Requests view
+  3              Merge Requests view`
+
+	if m.currentView == IssuesView {
+		helpContent += `
+
+Issues:
+  c              Create new issue
+  f              Filter issues (All/Open/Closed)
+  o              Toggle issue open/closed
+  y              Copy issue URL to clipboard
+  b              Open issue in browser
+  r              Add comment (in Comments view)
+  Tab            Toggle between Description/Comments`
+	}
+
+	helpContent += `
 
 Other:
   q              Quit
