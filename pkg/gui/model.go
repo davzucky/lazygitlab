@@ -2,10 +2,14 @@ package gui
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	spin "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"gitlab.com/gitlab-org/api/client-go"
 )
 
 type ViewMode int
@@ -15,6 +19,14 @@ const (
 	IssuesView
 	MergeRequestsView
 )
+
+type issuesLoadedMsg struct {
+	issues []*gitlab.Issue
+}
+
+type issuesLoadedErrMsg struct {
+	err error
+}
 
 type Model struct {
 	currentView  ViewMode
@@ -33,8 +45,10 @@ type Model struct {
 }
 
 type ListItem struct {
-	ID    int
-	Title string
+	ID        int
+	Title     string
+	State     string
+	UpdatedAt time.Time
 }
 
 func NewModel(projectPath string, connection string) Model {
@@ -226,14 +240,28 @@ func (m Model) renderMainPanel() string {
 	}
 
 	if len(m.items) == 0 {
-		items = append(items, "  No items to display")
+		if m.currentView == IssuesView {
+			items = append(items, "  No issues found")
+		} else {
+			items = append(items, "  No items to display")
+		}
 	} else {
 		for i, item := range m.items {
 			prefix := "  "
 			if i == m.selectedItem {
 				prefix = "> "
 			}
-			items = append(items, prefix+item.Title)
+
+			if m.currentView == IssuesView {
+				displayText := fmt.Sprintf("#%d %s", item.ID, item.Title)
+				stateIcon := "●"
+				if item.State == "closed" {
+					stateIcon = "○"
+				}
+				items = append(items, prefix+stateIcon+" "+displayText)
+			} else {
+				items = append(items, prefix+item.Title)
+			}
 		}
 	}
 
@@ -253,8 +281,15 @@ func (m Model) renderDetailsPanel() string {
 		content = "  No item selected"
 	} else {
 		item := m.items[m.selectedItem]
-		content = "  ID: " + fmt.Sprintf("%d", item.ID) + "\n"
-		content += "  Title: " + item.Title
+		if m.currentView == IssuesView {
+			content = "  Issue #" + fmt.Sprintf("%d", item.ID) + "\n"
+			content += "  State: " + strings.Title(item.State) + "\n"
+			content += "  Title: " + item.Title + "\n"
+			content += "  Updated: " + item.UpdatedAt.Format("2006-01-02 15:04:05")
+		} else {
+			content = "  ID: " + fmt.Sprintf("%d", item.ID) + "\n"
+			content += "  Title: " + item.Title
+		}
 	}
 
 	panelContent := m.styles.DetailsPanelHeader.Render(title) + "\n\n" + content
@@ -335,4 +370,27 @@ func (m *Model) ClearError() {
 func (m *Model) SetItems(items []ListItem) {
 	m.items = items
 	m.selectedItem = 0
+}
+
+func IssuesToListItems(issues []*gitlab.Issue) []ListItem {
+	items := make([]ListItem, len(issues))
+	for i, issue := range issues {
+		items[i] = ListItem{
+			ID:        int(issue.IID),
+			Title:     truncateString(issue.Title, 60),
+			State:     issue.State,
+			UpdatedAt: *issue.UpdatedAt,
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
+	return items
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
