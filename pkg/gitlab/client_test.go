@@ -56,7 +56,10 @@ func (m *mockClient) GetIssueNotes(projectPath string, issueIID int64, opts *Get
 }
 
 func (m *mockClient) CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error) {
-	return m.notes[0], m.createNoteErr
+	if len(m.notes) > 0 {
+		return m.notes[0], m.createNoteErr
+	}
+	return nil, m.createNoteErr
 }
 
 func (m *mockClient) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {

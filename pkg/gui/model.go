@@ -386,7 +386,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			}
-			if len(msg.String()) == 1 && msg.String() != "c" {
+			if len(msg.String()) == 1 {
 				if m.issueFormField == "title" {
 					if msg.Type == tea.KeyBackspace {
 						if len(m.issueFormTitle) > 0 {
@@ -807,7 +807,7 @@ func (m Model) renderDetailsPanel() string {
 							break
 						}
 						author := "Unknown"
-						if comment.Author.Username != "" {
+						if strings.TrimSpace(comment.Author.Username) != "" {
 							author = comment.Author.Username
 						}
 						date := ""
