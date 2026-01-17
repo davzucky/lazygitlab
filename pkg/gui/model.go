@@ -28,20 +28,25 @@ type issuesLoadedErrMsg struct {
 	err error
 }
 
+type issueDetailLoadedMsg struct {
+	issue *gitlab.Issue
+}
+
 type Model struct {
-	currentView  ViewMode
-	items        []ListItem
-	selectedItem int
-	projectPath  string
-	connection   string
-	width        int
-	height       int
-	styles       *Style
-	showHelp     bool
-	showError    bool
-	errorMessage string
-	isLoading    bool
-	spinner      spin.Model
+	currentView   ViewMode
+	items         []ListItem
+	selectedItem  int
+	projectPath   string
+	connection    string
+	width         int
+	height        int
+	styles        *Style
+	showHelp      bool
+	showError     bool
+	errorMessage  string
+	isLoading     bool
+	spinner       spin.Model
+	selectedIssue *gitlab.Issue
 }
 
 type ListItem struct {
@@ -49,6 +54,12 @@ type ListItem struct {
 	Title     string
 	State     string
 	UpdatedAt time.Time
+	CreatedAt time.Time
+	Author    string
+	Desc      string
+	Labels    []string
+	Assignees []string
+	Milestone string
 }
 
 func NewModel(projectPath string, connection string) Model {
@@ -154,6 +165,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if len(m.items) > 0 && m.selectedItem < len(m.items) {
+				if m.currentView == IssuesView {
+					m.selectedIssue = nil
+				}
 			}
 		case "esc":
 		case "?":
@@ -282,10 +296,44 @@ func (m Model) renderDetailsPanel() string {
 	} else {
 		item := m.items[m.selectedItem]
 		if m.currentView == IssuesView {
-			content = "  Issue #" + fmt.Sprintf("%d", item.ID) + "\n"
-			content += "  State: " + strings.Title(item.State) + "\n"
-			content += "  Title: " + item.Title + "\n"
-			content += "  Updated: " + item.UpdatedAt.Format("2006-01-02 15:04:05")
+			content = fmt.Sprintf("  #%d - %s\n\n", item.ID, item.Title)
+
+			content += fmt.Sprintf("  State: %s\n", strings.Title(item.State))
+
+			if item.Author != "" {
+				content += fmt.Sprintf("  Author: %s\n", item.Author)
+			}
+
+			content += fmt.Sprintf("  Created: %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
+			content += fmt.Sprintf("  Updated: %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+			if len(item.Assignees) > 0 {
+				content += fmt.Sprintf("  Assignees: %s\n", strings.Join(item.Assignees, ", "))
+			}
+
+			if item.Milestone != "" {
+				content += fmt.Sprintf("  Milestone: %s\n", item.Milestone)
+			}
+
+			if len(item.Labels) > 0 {
+				content += fmt.Sprintf("  Labels: %s\n", strings.Join(item.Labels, ", "))
+			}
+
+			if item.Desc != "" {
+				content += "\n  Description:\n"
+				maxDescLines := 8
+				descLines := strings.Split(item.Desc, "\n")
+				if len(descLines) > maxDescLines {
+					for i := 0; i < maxDescLines; i++ {
+						content += "  " + descLines[i] + "\n"
+					}
+					content += fmt.Sprintf("  ... (%d more lines)\n", len(descLines)-maxDescLines)
+				} else {
+					for _, line := range descLines {
+						content += "  " + line + "\n"
+					}
+				}
+			}
 		} else {
 			content = "  ID: " + fmt.Sprintf("%d", item.ID) + "\n"
 			content += "  Title: " + item.Title
@@ -375,11 +423,39 @@ func (m *Model) SetItems(items []ListItem) {
 func IssuesToListItems(issues []*gitlab.Issue) []ListItem {
 	items := make([]ListItem, len(issues))
 	for i, issue := range issues {
+		authorName := "Unknown"
+		if issue.Author != nil {
+			authorName = issue.Author.Username
+		}
+
+		labels := make([]string, len(issue.Labels))
+		for j, label := range issue.Labels {
+			labels[j] = label
+		}
+
+		assignees := make([]string, len(issue.Assignees))
+		for j, assignee := range issue.Assignees {
+			if assignee != nil {
+				assignees[j] = assignee.Username
+			}
+		}
+
+		milestoneName := ""
+		if issue.Milestone != nil {
+			milestoneName = issue.Milestone.Title
+		}
+
 		items[i] = ListItem{
 			ID:        int(issue.IID),
 			Title:     truncateString(issue.Title, 60),
 			State:     issue.State,
 			UpdatedAt: *issue.UpdatedAt,
+			CreatedAt: *issue.CreatedAt,
+			Author:    authorName,
+			Desc:      issue.Description,
+			Labels:    labels,
+			Assignees: assignees,
+			Milestone: milestoneName,
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {
