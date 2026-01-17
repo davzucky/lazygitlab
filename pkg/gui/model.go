@@ -317,7 +317,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, item := range m.items {
 			if item.ID == int(msg.issue.IID) {
 				m.items[i].State = msg.issue.State
-				m.items[i].UpdatedAt = *msg.issue.UpdatedAt
+				if msg.issue.UpdatedAt != nil {
+					m.items[i].UpdatedAt = *msg.issue.UpdatedAt
+				}
 			}
 		}
 		if m.selectedIssue != nil && m.selectedIssue.IID == msg.issue.IID {
