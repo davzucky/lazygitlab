@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	gl "github.com/davzucky/lazygitlab/pkg/gitlab"
+	"github.com/davzucky/lazygitlab/pkg/utils"
 	"gitlab.com/gitlab-org/api/client-go"
 )
 
@@ -109,6 +110,8 @@ type issueUpdatedErrMsg struct {
 	err error
 }
 
+type clipboardClearMsg struct{}
+
 type Model struct {
 	currentView         ViewMode
 	items               []ListItem
@@ -135,6 +138,7 @@ type Model struct {
 	showConfirmPopup    bool
 	confirmAction       string
 	confirmIssueIID     int64
+	clipboardMessage    string
 }
 
 type gitlabClient interface {
@@ -272,6 +276,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmAction = ""
 		m.confirmIssueIID = 0
 		m.isLoading = false
+		return m, nil
+	case clipboardClearMsg:
+		m.clipboardMessage = ""
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -449,6 +456,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmAction = action
 				m.confirmIssueIID = int64(item.ID)
 				m.showConfirmPopup = true
+			}
+		case "y":
+			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
+				item := m.items[m.selectedItem]
+				url := fmt.Sprintf("https://gitlab.com/%s/-/issues/%d", m.projectPath, item.ID)
+				if err := utils.CopyToClipboard(url); err != nil {
+					m.SetError(fmt.Sprintf("Failed to copy URL: %v", err))
+				} else {
+					m.clipboardMessage = "URL copied to clipboard"
+					return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+						return clipboardClearMsg{}
+					})
+				}
 			}
 		}
 	}
@@ -678,6 +698,10 @@ func (m Model) renderStatusBar() string {
 	projectInfo := "Project: " + m.projectPath
 	connInfo := "Connection: " + m.connection
 	helpInfo := "? for help"
+
+	if m.clipboardMessage != "" {
+		return m.styles.StatusBar.Render(m.clipboardMessage)
+	}
 
 	status := projectInfo + " | " + connInfo + " | " + helpInfo
 	if m.currentView == IssuesView {
