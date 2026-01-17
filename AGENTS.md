@@ -205,7 +205,7 @@ The GUI model includes built-in support for loading indicators and error popups.
 ### Confirmation Popup
 
 - Add `showConfirmPopup bool`, `confirmAction string`, and `confirmIssueIID int64` fields to Model struct
-- Check `showConfirmPopup` before `showError` in both `Update()` and `View()` methods (confirmation takes priority)
+- Check `showError` before `showConfirmPopup` in both `Update()` and `View()` methods (error takes priority)
 - In `Update()`: handle `y` for confirm, `n`/`esc` for cancel
 - In `View()`: return `m.renderConfirmPopup()` if showing, before other popups
 - Create `renderConfirmPopup()` method with styled confirmation message

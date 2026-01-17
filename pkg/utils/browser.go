@@ -32,6 +32,9 @@ func openInBrowserLinux(url string) error {
 		}
 		return fmt.Errorf("failed to open browser: %w", err)
 	}
+	go func() {
+		_ = cmd.Wait()
+	}()
 	return nil
 }
 

@@ -359,6 +359,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.KeyMsg:
+		if m.showError {
+			switch msg.String() {
+			case "r":
+				m.showError = false
+			case "esc", "q":
+				m.showError = false
+			}
+			return m, nil
+		}
 		if m.showCreateIssueForm {
 			switch msg.String() {
 			case "esc":
@@ -430,15 +439,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if msg.Type == tea.KeyRunes {
 				m.commentFormBody += string(msg.Runes)
-			}
-			return m, nil
-		}
-		if m.showError {
-			switch msg.String() {
-			case "r":
-				m.showError = false
-			case "esc", "q":
-				m.showError = false
 			}
 			return m, nil
 		}
@@ -611,6 +611,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if m.showError {
+		return m.renderErrorPopup()
+	}
+
 	if m.showCreateIssueForm {
 		return m.renderCreateIssueForm()
 	}
@@ -621,10 +625,6 @@ func (m Model) View() string {
 
 	if m.showConfirmPopup {
 		return m.renderConfirmPopup()
-	}
-
-	if m.showError {
-		return m.renderErrorPopup()
 	}
 
 	if m.showHelp {
