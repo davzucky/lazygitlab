@@ -172,3 +172,15 @@ The GUI model includes built-in support for loading indicators and error popups.
 - Create `renderErrorPopup()` method with styled error message
 - Error popup styling: use red border (`lipgloss.Color("196")`) and dark red background
 - Add helper methods: `SetError(message string)`, `ClearError()`
+
+### Confirmation Popup
+
+- Add `showConfirmPopup bool`, `confirmAction string`, and `confirmIssueIID int64` fields to Model struct
+- Check `showConfirmPopup` before `showError` in both `Update()` and `View()` methods (confirmation takes priority)
+- In `Update()`: handle `y` for confirm, `n`/`esc` for cancel
+- In `View()`: return `m.renderConfirmPopup()` if showing, before other popups
+- Create `renderConfirmPopup()` method with styled confirmation message
+- Confirmation popup styling: use rounded border with blue/purple theme (`lipgloss.Color("62")`)
+- Set action context (e.g., "close" or "reopen") in `confirmAction` before showing popup
+- Set affected item ID in `confirmIssueIID` for display in confirmation message
+- Reset all confirmation state fields when closing popup (both confirm and cancel)

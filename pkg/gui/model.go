@@ -101,6 +101,14 @@ type issueCreatedErrMsg struct {
 	err error
 }
 
+type issueUpdatedMsg struct {
+	issue *gitlab.Issue
+}
+
+type issueUpdatedErrMsg struct {
+	err error
+}
+
 type Model struct {
 	currentView         ViewMode
 	items               []ListItem
@@ -124,11 +132,15 @@ type Model struct {
 	issueFormTitle      string
 	issueFormDesc       string
 	issueFormField      string
+	showConfirmPopup    bool
+	confirmAction       string
+	confirmIssueIID     int64
 }
 
 type gitlabClient interface {
 	GetIssueNotes(projectPath string, issueIID int64, opts *gl.GetIssueNotesOptions) ([]*gitlab.Note, error)
 	CreateIssue(projectPath string, opts *gl.CreateIssueOptions) (*gitlab.Issue, error)
+	UpdateIssue(projectPath string, issueIID int64, opts *gl.UpdateIssueOptions) (*gitlab.Issue, error)
 }
 
 type ListItem struct {
@@ -170,6 +182,9 @@ func NewModel(projectPath string, connection string, client gitlabClient) Model 
 		issueFormTitle:      "",
 		issueFormDesc:       "",
 		issueFormField:      "title",
+		showConfirmPopup:    false,
+		confirmAction:       "",
+		confirmIssueIID:     0,
 	}
 }
 
@@ -201,6 +216,19 @@ func createIssueCmd(projectPath, title, description string, client gitlabClient)
 	}
 }
 
+func updateIssueCmd(projectPath string, issueIID int64, stateEvent string, client gitlabClient) tea.Cmd {
+	return func() tea.Msg {
+		opts := &gl.UpdateIssueOptions{
+			StateEvent: stateEvent,
+		}
+		issue, err := client.UpdateIssue(projectPath, issueIID, opts)
+		if err != nil {
+			return issueUpdatedErrMsg{err: err}
+		}
+		return issueUpdatedMsg{issue: issue}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case commentsLoadedMsg:
@@ -221,6 +249,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issueCreatedErrMsg:
 		m.SetError(fmt.Sprintf("Failed to create issue: %v", msg.err))
 		m.showCreateIssueForm = false
+		m.isLoading = false
+		return m, nil
+	case issueUpdatedMsg:
+		m.showConfirmPopup = false
+		m.confirmAction = ""
+		m.confirmIssueIID = 0
+		m.isLoading = false
+		for i, item := range m.items {
+			if item.ID == int(msg.issue.IID) {
+				m.items[i].State = msg.issue.State
+				m.items[i].UpdatedAt = *msg.issue.UpdatedAt
+			}
+		}
+		if m.selectedIssue != nil && m.selectedIssue.IID == msg.issue.IID {
+			m.selectedIssue.State = msg.issue.State
+		}
+		return m, nil
+	case issueUpdatedErrMsg:
+		m.SetError(fmt.Sprintf("Failed to update issue: %v", msg.err))
+		m.showConfirmPopup = false
+		m.confirmAction = ""
+		m.confirmIssueIID = 0
 		m.isLoading = false
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -287,6 +337,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showError = false
 			case "esc", "q":
 				m.showError = false
+			}
+			return m, nil
+		}
+		if m.showConfirmPopup {
+			switch msg.String() {
+			case "y":
+				m.isLoading = true
+				stateEvent := "close"
+				if m.confirmAction == "reopen" {
+					stateEvent = "reopen"
+				}
+				return m, updateIssueCmd(m.projectPath, m.confirmIssueIID, stateEvent, m.client)
+			case "n", "esc":
+				m.showConfirmPopup = false
+				m.confirmAction = ""
+				m.confirmIssueIID = 0
 			}
 			return m, nil
 		}
@@ -373,6 +439,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.issueFormDesc = ""
 				m.issueFormField = "title"
 			}
+		case "o":
+			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
+				item := m.items[m.selectedItem]
+				action := "close"
+				if item.State == "closed" {
+					action = "reopen"
+				}
+				m.confirmAction = action
+				m.confirmIssueIID = int64(item.ID)
+				m.showConfirmPopup = true
+			}
 		}
 	}
 
@@ -382,6 +459,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.showCreateIssueForm {
 		return m.renderCreateIssueForm()
+	}
+
+	if m.showConfirmPopup {
+		return m.renderConfirmPopup()
 	}
 
 	if m.showError {
@@ -781,4 +862,22 @@ func (m Model) renderCreateIssueForm() string {
 		Align(lipgloss.Center)
 
 	return formStyle.Render(formContent)
+}
+
+func (m Model) renderConfirmPopup() string {
+	confirmText := fmt.Sprintf("Confirm %s\n\n", strings.Title(m.confirmAction))
+	confirmText += fmt.Sprintf("Are you sure you want to %s issue #%d?\n\n", m.confirmAction, m.confirmIssueIID)
+	confirmText += "Press y to confirm\n"
+	confirmText += "Press n or Esc to cancel"
+
+	confirmStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Background(lipgloss.Color("235")).
+		Foreground(lipgloss.Color("255")).
+		Padding(1, 2).
+		Width(50).
+		Align(lipgloss.Center)
+
+	return confirmStyle.Render(confirmText)
 }
