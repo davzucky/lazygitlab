@@ -470,6 +470,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				}
 			}
+		case "b":
+			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
+				item := m.items[m.selectedItem]
+				url := fmt.Sprintf("https://gitlab.com/%s/-/issues/%d", m.projectPath, item.ID)
+				if err := utils.OpenInBrowser(url); err != nil {
+					m.SetError(fmt.Sprintf("Failed to open browser: %v", err))
+				}
+			}
 		}
 	}
 
