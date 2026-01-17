@@ -15,6 +15,7 @@ type Client interface {
 	GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error)
 	GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error)
 	CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error)
+	CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error)
 	Close() error
 }
 
@@ -43,6 +44,11 @@ type GetIssueNotesOptions struct {
 type CreateIssueNoteOptions struct {
 	Body     string
 	Internal bool
+}
+
+type CreateIssueOptions struct {
+	Title       string
+	Description string
 }
 
 type client struct {
@@ -276,6 +282,28 @@ func (c *client) CreateIssueNote(projectPath string, issueIID int64, opts *Creat
 		return nil, fmt.Errorf("received nil note from API")
 	}
 	return note, nil
+}
+
+func (c *client) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {
+	options := &gitlab.CreateIssueOptions{}
+
+	if opts != nil {
+		if opts.Title != "" {
+			options.Title = &opts.Title
+		}
+		if opts.Description != "" {
+			options.Description = &opts.Description
+		}
+	}
+
+	issue, _, err := c.client.Issues.CreateIssue(projectPath, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create issue in project %s: %w", projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("received nil issue from API")
+	}
+	return issue, nil
 }
 
 func (c *client) Close() error {

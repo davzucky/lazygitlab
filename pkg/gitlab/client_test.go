@@ -8,21 +8,22 @@ import (
 )
 
 type mockClient struct {
-	user          *gitlab.User
-	project       *gitlab.Project
-	issues        []*gitlab.Issue
-	issue         *gitlab.Issue
-	mergeReqs     []*gitlab.BasicMergeRequest
-	labels        []*gitlab.Label
-	notes         []*gitlab.Note
-	userErr       error
-	projectErr    error
-	issuesErr     error
-	issueErr      error
-	mergeReqsErr  error
-	labelsErr     error
-	notesErr      error
-	createNoteErr error
+	user           *gitlab.User
+	project        *gitlab.Project
+	issues         []*gitlab.Issue
+	issue          *gitlab.Issue
+	mergeReqs      []*gitlab.BasicMergeRequest
+	labels         []*gitlab.Label
+	notes          []*gitlab.Note
+	userErr        error
+	projectErr     error
+	issuesErr      error
+	issueErr       error
+	mergeReqsErr   error
+	labelsErr      error
+	notesErr       error
+	createNoteErr  error
+	createIssueErr error
 }
 
 func (m *mockClient) GetCurrentUser() (*gitlab.User, error) {
@@ -55,6 +56,10 @@ func (m *mockClient) GetIssueNotes(projectPath string, issueIID int64, opts *Get
 
 func (m *mockClient) CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error) {
 	return m.notes[0], m.createNoteErr
+}
+
+func (m *mockClient) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {
+	return m.issue, m.createIssueErr
 }
 
 func (m *mockClient) Close() error {

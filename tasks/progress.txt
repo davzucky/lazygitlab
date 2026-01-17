@@ -1,0 +1,35 @@
+## Codebase Patterns
+
+- GitLab API client is injected into the Model via NewModel() constructor
+- Use async command pattern for API calls: define Msg type (e.g., commentsLoadedMsg), create command function (e.g., loadCommentsCmd), handle in Update()
+- State enums (DetailSection, ViewMode, IssueFilterState) need String() method for display
+- Tab key behavior is context-dependent: toggles sections in detail view, switches views otherwise
+- Check view-specific state (len(m.items) > 0 && m.selectedItem < len(m.items)) before showing section-specific UI
+- gitlab.Note.Author is a struct, not a pointer - check empty string instead of nil
+- GitLab SDK types (gitlab.Issue, gitlab.Note) are used in model, but local gitlab package provides API wrapper
+- Import aliasing needed when importing both gitlab SDK and local pkg/gitlab package (use `gl` alias for local package)
+
+## 2026-01-17 - US-007
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added DetailSection enum (DescriptionSection, CommentsSection) with String() method
+- Added commentsLoadedMsg, commentsLoadedErrMsg message types for async loading
+- Added selectedComments []*gitlab.Note field to Model
+- Added gitlabClient interface to Model for dependency injection (allows mocking)
+- Created loadCommentsCmd() function to fetch comments via API
+- Updated Tab key handler: toggles detail sections in IssuesView, switches views otherwise
+- Updated Enter key handler in IssuesView: loads comments when issue selected, resets to DescriptionSection
+- Updated renderDetailsPanel: shows description or comments based on detailSection state
+- Updated status bar: shows current view (Description/Comments) and comment count
+- Modified main.go: create GitLab client and inject into Model
+
+**Learnings for future iterations:**
+- When adding new detail sections, follow the DetailSection pattern: create enum type with String() method
+- API calls should be async using tea.Cmd pattern: define Msg type, create command function, handle in Update()
+- GitLab client must be created in main.go and injected into Model via NewModel()
+- When adding gitlab package imports, use aliasing to avoid conflicts with SDK types
+- For state-dependent key handlers (like Tab), check context first (currentView + selection state)
+- gitlab.Note.Author is a struct, check .Username field directly (not nil)
+- Loading state: set isLoading=true before command, set isLoading=false in message handler
+- Comment display limit: use maxCommentLines constant and show "+N more" indicator
+- Error handling: use SetError() helper and show error popup via renderErrorPopup()
+---
