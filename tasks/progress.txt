@@ -8,6 +8,8 @@
 - gitlab.Note.Author is a struct, not a pointer - check empty string instead of nil
 - GitLab SDK types (gitlab.Issue, gitlab.Note) are used in model, but local gitlab package provides API wrapper
 - Import aliasing needed when importing both gitlab SDK and local pkg/gitlab package (use `gl` alias for local package)
+- Confirmation popups should be checked before error popups (higher priority) in both Update() and View() methods
+- When updating state in-place (e.g., after API call), update both items[i] and selectedIssue to keep UI in sync
 
 ## 2026-01-17 - US-007
 Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
@@ -98,3 +100,27 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Return nil error with wrapped context: fmt.Errorf("failed to update issue %d in project %s: %w", issueIID, projectPath, err)
 - Always check for nil responses from API and return descriptive error
 ---
+
+## 2026-01-17 - US-011
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added issueUpdatedMsg and issueUpdatedErrMsg message types for async issue updates
+- Added showConfirmPopup, confirmAction, and confirmIssueIID fields to Model
+- Added UpdateIssue method to gitlabClient interface in GUI package
+- Created updateIssueCmd() function to handle async API call
+- Added 'o' key handler in IssuesView to show confirmation popup
+- Added confirmation popup key handlers: 'y' for confirm, 'n'/'esc' for cancel
+- Created renderConfirmPopup() method with rounded border and blue/purple theme
+- In issueUpdatedMsg handler: updates items[i].State and selectedIssue.State, resets confirmation state
+- Added confirmation popup check before error popup in Update() and View() methods
+- After successful update, confirmation state is reset (showConfirmPopup, confirmAction, confirmIssueIID)
+
+**Learnings for future iterations:**
+- Confirmation popups need three state fields: show flag, action description, and affected item ID
+- Check showConfirmPopup before showError in both Update() and View() methods (confirmation has higher priority)
+- When updating list items in-place after API call, update both items array and selectedIssue reference
+- Use strings.Title() to capitalize action text (e.g., "close" → "Close") in confirmation popup
+- Toggle action based on current state: check item.State to determine whether to "close" or "reopen"
+- StateEvent values for UpdateIssue: "reopen" to open, "close" to close
+- Reset all confirmation state fields when closing popup (both on confirm and cancel)
+- Confirmation popup styling: use lipgloss.Color("62") for border to match app theme
+
