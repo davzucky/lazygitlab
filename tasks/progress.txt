@@ -30,6 +30,23 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - For state-dependent key handlers (like Tab), check context first (currentView + selection state)
 - gitlab.Note.Author is a struct, check .Username field directly (not nil)
 - Loading state: set isLoading=true before command, set isLoading=false in message handler
-- Comment display limit: use maxCommentLines constant and show "+N more" indicator
-- Error handling: use SetError() helper and show error popup via renderErrorPopup()
+ - Comment display limit: use maxCommentLines constant and show "+N more" indicator
+ - Error handling: use SetError() helper and show error popup via renderErrorPopup()
+ ---
+
+## 2026-01-17 - US-008
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added CreateIssueOptions struct with Title and Description fields
+- Added CreateIssue method to Client interface
+- Implemented CreateIssue method in client struct: calls gitlab.Issues.CreateIssue with proper options
+- Added createIssueErr field to mockClient struct in client_test.go
+- Added CreateIssue method to mockClient in client_test.go: returns m.issue, m.createIssueErr
+
+**Learnings for future iterations:**
+- Follow established pattern when adding API methods: Options struct → Client interface → client implementation → mock implementation
+- GitLab SDK's CreateIssue method takes gitlab.CreateIssueOptions with pointer fields (Title, Description)
+- Map local options struct to SDK options struct by checking non-empty values and setting pointers
+- Return nil error with wrapped context: fmt.Errorf("context: %w", err)
+- Always check for nil responses from API and return descriptive error
+- Mock implementation pattern: return mock data from struct fields, allow error injection via error field
 ---
