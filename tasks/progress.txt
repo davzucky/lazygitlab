@@ -81,3 +81,20 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - Async API calls follow pattern: create Msg type, create Cmd function, handle in Update method
 - Form rendering should show all fields but highlight the active one with different style
 ---
+
+## 2026-01-17 - US-010
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Added UpdateIssueOptions struct with Title, Description, and StateEvent fields
+- Added UpdateIssue method to Client interface in gitlab package
+- Implemented UpdateIssue method in client struct: calls gitlab.Issues.UpdateIssue with proper options
+- Added updateIssueErr field to mockClient struct in client_test.go
+- Added UpdateIssue method to mockClient in client_test.go: returns m.issue, m.updateIssueErr
+
+**Learnings for future iterations:**
+- Follow established pattern for update operations similar to create operations: Options struct → Client interface → client implementation → mock implementation
+- GitLab SDK's UpdateIssue method takes gitlab.UpdateIssueOptions with pointer fields
+- StateEvent field accepts values like "reopen" or "close" to toggle issue state
+- Map local options struct to SDK options struct by checking non-empty values and setting pointers
+- Return nil error with wrapped context: fmt.Errorf("failed to update issue %d in project %s: %w", issueIID, projectPath, err)
+- Always check for nil responses from API and return descriptive error
+---

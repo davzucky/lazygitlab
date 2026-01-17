@@ -16,6 +16,7 @@ type Client interface {
 	GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error)
 	CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error)
 	CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error)
+	UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error)
 	Close() error
 }
 
@@ -49,6 +50,12 @@ type CreateIssueNoteOptions struct {
 type CreateIssueOptions struct {
 	Title       string
 	Description string
+}
+
+type UpdateIssueOptions struct {
+	Title       string
+	Description string
+	StateEvent  string
 }
 
 type client struct {
@@ -299,6 +306,31 @@ func (c *client) CreateIssue(projectPath string, opts *CreateIssueOptions) (*git
 	issue, _, err := c.client.Issues.CreateIssue(projectPath, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create issue in project %s: %w", projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("received nil issue from API")
+	}
+	return issue, nil
+}
+
+func (c *client) UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error) {
+	options := &gitlab.UpdateIssueOptions{}
+
+	if opts != nil {
+		if opts.Title != "" {
+			options.Title = &opts.Title
+		}
+		if opts.Description != "" {
+			options.Description = &opts.Description
+		}
+		if opts.StateEvent != "" {
+			options.StateEvent = &opts.StateEvent
+		}
+	}
+
+	issue, _, err := c.client.Issues.UpdateIssue(projectPath, issueIID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update issue %d in project %s: %w", issueIID, projectPath, err)
 	}
 	if issue == nil {
 		return nil, fmt.Errorf("received nil issue from API")

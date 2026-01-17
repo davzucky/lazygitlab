@@ -24,6 +24,7 @@ type mockClient struct {
 	notesErr       error
 	createNoteErr  error
 	createIssueErr error
+	updateIssueErr error
 }
 
 func (m *mockClient) GetCurrentUser() (*gitlab.User, error) {
@@ -60,6 +61,10 @@ func (m *mockClient) CreateIssueNote(projectPath string, issueIID int64, opts *C
 
 func (m *mockClient) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {
 	return m.issue, m.createIssueErr
+}
+
+func (m *mockClient) UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error) {
+	return m.issue, m.updateIssueErr
 }
 
 func (m *mockClient) Close() error {
