@@ -9,6 +9,7 @@ import (
 	spin "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	gl "github.com/davzucky/lazygitlab/pkg/gitlab"
 	"gitlab.com/gitlab-org/api/client-go"
 )
 
@@ -27,6 +28,24 @@ const (
 	FilterOpen
 	FilterClosed
 )
+
+type DetailSection int
+
+const (
+	DescriptionSection DetailSection = iota
+	CommentsSection
+)
+
+func (s DetailSection) String() string {
+	switch s {
+	case DescriptionSection:
+		return "Description"
+	case CommentsSection:
+		return "Comments"
+	default:
+		return "Description"
+	}
+}
 
 func (f IssueFilterState) String() string {
 	switch f {
@@ -66,22 +85,37 @@ type issueDetailLoadedMsg struct {
 	issue *gitlab.Issue
 }
 
+type commentsLoadedMsg struct {
+	comments []*gitlab.Note
+}
+
+type commentsLoadedErrMsg struct {
+	err error
+}
+
 type Model struct {
-	currentView   ViewMode
-	items         []ListItem
-	selectedItem  int
-	projectPath   string
-	connection    string
-	width         int
-	height        int
-	styles        *Style
-	showHelp      bool
-	showError     bool
-	errorMessage  string
-	isLoading     bool
-	spinner       spin.Model
-	selectedIssue *gitlab.Issue
-	issueFilter   IssueFilterState
+	currentView      ViewMode
+	items            []ListItem
+	selectedItem     int
+	projectPath      string
+	connection       string
+	width            int
+	height           int
+	styles           *Style
+	showHelp         bool
+	showError        bool
+	errorMessage     string
+	isLoading        bool
+	spinner          spin.Model
+	selectedIssue    *gitlab.Issue
+	issueFilter      IssueFilterState
+	detailSection    DetailSection
+	selectedComments []*gitlab.Note
+	client           gitlabClient
+}
+
+type gitlabClient interface {
+	GetIssueNotes(projectPath string, issueIID int64, opts *gl.GetIssueNotesOptions) ([]*gitlab.Note, error)
 }
 
 type ListItem struct {
@@ -97,25 +131,28 @@ type ListItem struct {
 	Milestone string
 }
 
-func NewModel(projectPath string, connection string) Model {
+func NewModel(projectPath string, connection string, client gitlabClient) Model {
 	styles := NewStyle()
 	spinner := spin.New()
 	spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
 
 	return Model{
-		currentView:  ProjectsView,
-		items:        []ListItem{},
-		selectedItem: 0,
-		projectPath:  projectPath,
-		connection:   connection,
-		width:        80,
-		height:       24,
-		styles:       styles,
-		showError:    false,
-		errorMessage: "",
-		isLoading:    false,
-		spinner:      spinner,
-		issueFilter:  FilterAll,
+		currentView:      ProjectsView,
+		items:            []ListItem{},
+		selectedItem:     0,
+		projectPath:      projectPath,
+		connection:       connection,
+		width:            80,
+		height:           24,
+		styles:           styles,
+		showError:        false,
+		errorMessage:     "",
+		isLoading:        false,
+		spinner:          spinner,
+		issueFilter:      FilterAll,
+		detailSection:    DescriptionSection,
+		selectedComments: []*gitlab.Note{},
+		client:           client,
 	}
 }
 
@@ -123,8 +160,26 @@ func (m Model) Init() tea.Cmd {
 	return m.spinner.Tick
 }
 
+func loadCommentsCmd(projectPath string, issueIID int64, client gitlabClient) tea.Cmd {
+	return func() tea.Msg {
+		comments, err := client.GetIssueNotes(projectPath, issueIID, nil)
+		if err != nil {
+			return commentsLoadedErrMsg{err: err}
+		}
+		return commentsLoadedMsg{comments: comments}
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case commentsLoadedMsg:
+		m.selectedComments = msg.comments
+		m.isLoading = false
+		return m, nil
+	case commentsLoadedErrMsg:
+		m.SetError(fmt.Sprintf("Failed to load comments: %v", msg.err))
+		m.isLoading = false
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -184,12 +239,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedItem = 0
 			}
 		case "tab":
-			if m.currentView < MergeRequestsView {
-				m.currentView++
-				m.selectedItem = 0
+			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
+				m.detailSection = (m.detailSection + 1) % 2
 			} else {
-				m.currentView = ProjectsView
-				m.selectedItem = 0
+				if m.currentView < MergeRequestsView {
+					m.currentView++
+					m.selectedItem = 0
+				} else {
+					m.currentView = ProjectsView
+					m.selectedItem = 0
+				}
 			}
 		case "shift+tab":
 			if m.currentView > ProjectsView {
@@ -202,7 +261,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if len(m.items) > 0 && m.selectedItem < len(m.items) {
 				if m.currentView == IssuesView {
-					m.selectedIssue = nil
+					m.detailSection = DescriptionSection
+					m.selectedComments = []*gitlab.Note{}
+					item := m.items[m.selectedItem]
+					m.isLoading = true
+					return m, loadCommentsCmd(m.projectPath, int64(item.ID), m.client)
 				}
 			}
 		case "esc":
@@ -347,41 +410,74 @@ func (m Model) renderDetailsPanel() string {
 	} else {
 		item := m.items[m.selectedItem]
 		if m.currentView == IssuesView {
-			content = fmt.Sprintf("  #%d - %s\n\n", item.ID, item.Title)
+			if m.detailSection == DescriptionSection {
+				content = fmt.Sprintf("  #%d - %s\n\n", item.ID, item.Title)
 
-			content += fmt.Sprintf("  State: %s\n", strings.Title(item.State))
+				content += fmt.Sprintf("  State: %s\n", strings.Title(item.State))
 
-			if item.Author != "" {
-				content += fmt.Sprintf("  Author: %s\n", item.Author)
-			}
+				if item.Author != "" {
+					content += fmt.Sprintf("  Author: %s\n", item.Author)
+				}
 
-			content += fmt.Sprintf("  Created: %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
-			content += fmt.Sprintf("  Updated: %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
+				content += fmt.Sprintf("  Created: %s\n", item.CreatedAt.Format("2006-01-02 15:04:05"))
+				content += fmt.Sprintf("  Updated: %s\n", item.UpdatedAt.Format("2006-01-02 15:04:05"))
 
-			if len(item.Assignees) > 0 {
-				content += fmt.Sprintf("  Assignees: %s\n", strings.Join(item.Assignees, ", "))
-			}
+				if len(item.Assignees) > 0 {
+					content += fmt.Sprintf("  Assignees: %s\n", strings.Join(item.Assignees, ", "))
+				}
 
-			if item.Milestone != "" {
-				content += fmt.Sprintf("  Milestone: %s\n", item.Milestone)
-			}
+				if item.Milestone != "" {
+					content += fmt.Sprintf("  Milestone: %s\n", item.Milestone)
+				}
 
-			if len(item.Labels) > 0 {
-				content += fmt.Sprintf("  Labels: %s\n", strings.Join(item.Labels, ", "))
-			}
+				if len(item.Labels) > 0 {
+					content += fmt.Sprintf("  Labels: %s\n", strings.Join(item.Labels, ", "))
+				}
 
-			if item.Desc != "" {
-				content += "\n  Description:\n"
-				maxDescLines := 8
-				descLines := strings.Split(item.Desc, "\n")
-				if len(descLines) > maxDescLines {
-					for i := 0; i < maxDescLines; i++ {
-						content += "  " + descLines[i] + "\n"
+				if item.Desc != "" {
+					content += "\n  Description:\n"
+					maxDescLines := 8
+					descLines := strings.Split(item.Desc, "\n")
+					if len(descLines) > maxDescLines {
+						for i := 0; i < maxDescLines; i++ {
+							content += "  " + descLines[i] + "\n"
+						}
+						content += fmt.Sprintf("  ... (%d more lines)\n", len(descLines)-maxDescLines)
+					} else {
+						for _, line := range descLines {
+							content += "  " + line + "\n"
+						}
 					}
-					content += fmt.Sprintf("  ... (%d more lines)\n", len(descLines)-maxDescLines)
+				}
+			} else {
+				content = fmt.Sprintf("  #%d - %s\n\n", item.ID, item.Title)
+
+				if m.isLoading {
+					content += "  " + m.spinner.View() + " Loading comments..."
+				} else if len(m.selectedComments) == 0 {
+					content += "  No comments yet"
 				} else {
-					for _, line := range descLines {
-						content += "  " + line + "\n"
+					content += fmt.Sprintf("  %d comments\n\n", len(m.selectedComments))
+					maxCommentLines := 8
+					for i, comment := range m.selectedComments {
+						if i >= maxCommentLines {
+							content += fmt.Sprintf("  ... (%d more comments)\n", len(m.selectedComments)-maxCommentLines)
+							break
+						}
+						author := "Unknown"
+						if comment.Author.Username != "" {
+							author = comment.Author.Username
+						}
+						date := ""
+						if comment.CreatedAt != nil {
+							date = comment.CreatedAt.Format("2006-01-02 15:04:05")
+						}
+						content += fmt.Sprintf("  %s @ %s:\n", author, date)
+						bodyLines := strings.Split(comment.Body, "\n")
+						for _, line := range bodyLines {
+							content += "    " + line + "\n"
+						}
+						content += "\n"
 					}
 				}
 			}
@@ -403,6 +499,12 @@ func (m Model) renderStatusBar() string {
 	status := projectInfo + " | " + connInfo + " | " + helpInfo
 	if m.currentView == IssuesView {
 		status += " | Filter: " + m.issueFilter.String()
+		if len(m.items) > 0 && m.selectedItem < len(m.items) {
+			status += " | View: " + m.detailSection.String()
+			if m.detailSection == CommentsSection {
+				status += fmt.Sprintf(" (%d)", len(m.selectedComments))
+			}
+		}
 	}
 
 	return m.styles.StatusBar.Render(status)
