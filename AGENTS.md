@@ -89,7 +89,7 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 
 - `ListItem` struct can be extended with additional fields (e.g., description, author, labels, assignees, milestone)
 - When adding fields to `ListItem`, update the corresponding `IssuesToListItems` (or similar) function to populate them
-- Always use `strings.Title()` for state strings to capitalize first letter (e.g., "open" → "Open")
+- Use `cases.Title(language.English).String()` for state strings (e.g., "open" → "Open")
 - For optional fields in `renderDetailsPanel`, check if present before displaying (e.g., `if len(item.Assignees) > 0`)
 - For long text content (descriptions), truncate with line count limit and show remaining line count hint
 - Use `strings.Split(text, "\n")` to break multi-line content into individual lines for display

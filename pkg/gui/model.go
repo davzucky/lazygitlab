@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	spin "github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -125,6 +128,7 @@ type Model struct {
 	items               []ListItem
 	selectedItem        int
 	projectPath         string
+	host                string
 	connection          string
 	width               int
 	height              int
@@ -172,7 +176,7 @@ type ListItem struct {
 	Milestone string
 }
 
-func NewModel(projectPath string, connection string, client gitlabClient) Model {
+func NewModel(projectPath string, host string, connection string, client gitlabClient) Model {
 	styles := NewStyle()
 	spinner := spin.New()
 	spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("62"))
@@ -182,6 +186,7 @@ func NewModel(projectPath string, connection string, client gitlabClient) Model 
 		items:               []ListItem{},
 		selectedItem:        0,
 		projectPath:         projectPath,
+		host:                host,
 		connection:          connection,
 		width:               80,
 		height:              24,
@@ -581,7 +586,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "y":
 			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
 				item := m.items[m.selectedItem]
-				url := fmt.Sprintf("https://gitlab.com/%s/-/issues/%d", m.projectPath, item.ID)
+				url := fmt.Sprintf("%s/%s/-/issues/%d", strings.TrimRight(m.host, "/"), m.projectPath, item.ID)
 				if err := utils.CopyToClipboard(url); err != nil {
 					m.SetError(fmt.Sprintf("Failed to copy URL: %v", err))
 				} else {
@@ -594,7 +599,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "b":
 			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
 				item := m.items[m.selectedItem]
-				url := fmt.Sprintf("https://gitlab.com/%s/-/issues/%d", m.projectPath, item.ID)
+				url := fmt.Sprintf("%s/%s/-/issues/%d", strings.TrimRight(m.host, "/"), m.projectPath, item.ID)
 				if err := utils.OpenInBrowser(url); err != nil {
 					m.SetError(fmt.Sprintf("Failed to open browser: %v", err))
 				}
@@ -754,7 +759,7 @@ func (m Model) renderDetailsPanel() string {
 			if m.detailSection == DescriptionSection {
 				content = fmt.Sprintf("  #%d - %s\n\n", item.ID, item.Title)
 
-				content += fmt.Sprintf("  State: %s\n", strings.Title(item.State))
+				content += fmt.Sprintf("  State: %s\n", cases.Title(language.English).String(item.State))
 
 				if item.Author != "" {
 					content += fmt.Sprintf("  Author: %s\n", item.Author)
@@ -963,12 +968,21 @@ func IssuesToListItems(issues []*gitlab.Issue) []ListItem {
 			milestoneName = issue.Milestone.Title
 		}
 
+		updatedAt := time.Time{}
+		if issue.UpdatedAt != nil {
+			updatedAt = *issue.UpdatedAt
+		}
+		createdAt := time.Time{}
+		if issue.CreatedAt != nil {
+			createdAt = *issue.CreatedAt
+		}
+
 		items[i] = ListItem{
 			ID:        int(issue.IID),
 			Title:     truncateString(issue.Title, 60),
 			State:     issue.State,
-			UpdatedAt: *issue.UpdatedAt,
-			CreatedAt: *issue.CreatedAt,
+			UpdatedAt: updatedAt,
+			CreatedAt: createdAt,
 			Author:    authorName,
 			Desc:      issue.Description,
 			Labels:    labels,
@@ -983,10 +997,17 @@ func IssuesToListItems(issues []*gitlab.Issue) []ListItem {
 }
 
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	if maxLen <= 0 {
+		return ""
+	}
+	if maxLen <= 3 {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func (m Model) renderCreateIssueForm() string {
@@ -1042,7 +1063,7 @@ func (m Model) renderCreateIssueForm() string {
 }
 
 func (m Model) renderConfirmPopup() string {
-	confirmText := fmt.Sprintf("Confirm %s\n\n", strings.Title(m.confirmAction))
+	confirmText := fmt.Sprintf("Confirm %s\n\n", cases.Title(language.English).String(m.confirmAction))
 	confirmText += fmt.Sprintf("Are you sure you want to %s issue #%d?\n\n", m.confirmAction, m.confirmIssueIID)
 	confirmText += "Press y to confirm\n"
 	confirmText += "Press n or Esc to cancel"

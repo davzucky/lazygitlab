@@ -91,7 +91,7 @@ func main() {
 	}
 	defer glClient.Close()
 
-	model := gui.NewModel(projectPath, connection, glClient)
+	model := gui.NewModel(projectPath, cfg.Host, connection, glClient)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)
