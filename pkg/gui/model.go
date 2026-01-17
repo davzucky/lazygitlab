@@ -64,7 +64,7 @@ func (f IssueFilterState) String() string {
 func (f IssueFilterState) ToAPIState() string {
 	switch f {
 	case FilterAll:
-		return ""
+		return "all"
 	case FilterOpen:
 		return "opened"
 	case FilterClosed:
@@ -152,6 +152,7 @@ type Model struct {
 }
 
 type gitlabClient interface {
+	GetIssues(projectPath string, opts *gl.GetIssuesOptions) ([]*gitlab.Issue, error)
 	GetIssueNotes(projectPath string, issueIID int64, opts *gl.GetIssueNotesOptions) ([]*gitlab.Note, error)
 	CreateIssueNote(projectPath string, issueIID int64, opts *gl.CreateIssueNoteOptions) (*gitlab.Note, error)
 	CreateIssue(projectPath string, opts *gl.CreateIssueOptions) (*gitlab.Issue, error)
@@ -207,6 +208,19 @@ func (m Model) Init() tea.Cmd {
 	return m.spinner.Tick
 }
 
+func loadIssuesCmd(projectPath string, filter IssueFilterState, client gitlabClient) tea.Cmd {
+	return func() tea.Msg {
+		opts := &gl.GetIssuesOptions{
+			State: filter.ToAPIState(),
+		}
+		issues, err := client.GetIssues(projectPath, opts)
+		if err != nil {
+			return issuesLoadedErrMsg{err: err}
+		}
+		return issuesLoadedMsg{issues: issues}
+	}
+}
+
 func loadCommentsCmd(projectPath string, issueIID int64, client gitlabClient) tea.Cmd {
 	return func() tea.Msg {
 		comments, err := client.GetIssueNotes(projectPath, issueIID, nil)
@@ -259,6 +273,15 @@ func createCommentCmd(projectPath string, issueIID int64, body string, client gi
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case issuesLoadedMsg:
+		m.items = IssuesToListItems(msg.issues)
+		m.selectedItem = 0
+		m.isLoading = false
+		return m, nil
+	case issuesLoadedErrMsg:
+		m.SetError(fmt.Sprintf("Failed to load issues: %v", msg.err))
+		m.isLoading = false
+		return m, nil
 	case commentsLoadedMsg:
 		m.selectedComments = msg.comments
 		m.isLoading = false
@@ -273,7 +296,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issueFormTitle = ""
 		m.issueFormDesc = ""
 		m.issueFormField = "title"
-		return m, nil
+		m.selectedComments = []*gitlab.Note{}
+		m.isLoading = true
+		return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
 	case issueCreatedErrMsg:
 		m.SetError(fmt.Sprintf("Failed to create issue: %v", msg.err))
 		m.showCreateIssueForm = false
@@ -292,6 +317,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.selectedIssue != nil && m.selectedIssue.IID == msg.issue.IID {
 			m.selectedIssue.State = msg.issue.State
+		}
+		if m.currentView == IssuesView {
+			m.selectedComments = []*gitlab.Note{}
+			m.isLoading = true
+			return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
 		}
 		return m, nil
 	case issueUpdatedErrMsg:
@@ -455,6 +485,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "2":
 			m.currentView = IssuesView
 			m.selectedItem = 0
+			m.selectedComments = []*gitlab.Note{}
+			m.isLoading = true
+			return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
 		case "3":
 			m.currentView = MergeRequestsView
 			m.selectedItem = 0
@@ -462,11 +495,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView > ProjectsView {
 				m.currentView--
 				m.selectedItem = 0
+				if m.currentView == IssuesView {
+					m.selectedComments = []*gitlab.Note{}
+					m.isLoading = true
+					return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
+				}
 			}
 		case "l", "right":
 			if m.currentView < MergeRequestsView {
 				m.currentView++
 				m.selectedItem = 0
+				if m.currentView == IssuesView {
+					m.selectedComments = []*gitlab.Note{}
+					m.isLoading = true
+					return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
+				}
 			}
 		case "tab":
 			if m.currentView == IssuesView && len(m.items) > 0 && m.selectedItem < len(m.items) {
@@ -479,6 +522,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentView = ProjectsView
 					m.selectedItem = 0
 				}
+				if m.currentView == IssuesView {
+					m.selectedComments = []*gitlab.Note{}
+					m.isLoading = true
+					return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
+				}
 			}
 		case "shift+tab":
 			if m.currentView > ProjectsView {
@@ -487,6 +535,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.currentView = MergeRequestsView
 				m.selectedItem = 0
+			}
+			if m.currentView == IssuesView {
+				m.selectedComments = []*gitlab.Note{}
+				m.isLoading = true
+				return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
 			}
 		case "enter":
 			if len(m.items) > 0 && m.selectedItem < len(m.items) {
@@ -504,6 +557,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			if m.currentView == IssuesView {
 				m.issueFilter = (m.issueFilter + 1) % 3
+				m.selectedComments = []*gitlab.Note{}
+				m.isLoading = true
+				return m, loadIssuesCmd(m.projectPath, m.issueFilter, m.client)
 			}
 		case "c":
 			if m.currentView == IssuesView {
