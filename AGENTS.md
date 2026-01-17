@@ -10,6 +10,7 @@ The gitlab package provides an abstraction layer over GitLab's Go SDK (gitlab.co
 - Call `client.Close()` when done to clean up resources
 - Pagination is automatic for list endpoints (issues, merge requests) unless you specify a specific page
 - All API errors are wrapped with context using `fmt.Errorf("context: %w", err)`
+- When adding new API methods: define Options struct, add to Client interface, implement in client struct with pagination, update mockClient in client_test.go
 
 ### Type Notes
 
@@ -82,6 +83,7 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - For optional fields in `renderDetailsPanel`, check if present before displaying (e.g., `if len(item.Assignees) > 0`)
 - For long text content (descriptions), truncate with line count limit and show remaining line count hint
 - Use `strings.Split(text, "\n")` to break multi-line content into individual lines for display
+- For displaying collections in list rows (e.g., labels), limit to N items and show "+M" indicator for remaining: `[label1, label2, label3 +2]`
 
 # Project Context
 

@@ -312,7 +312,18 @@ func (m Model) renderMainPanel() string {
 				if item.State == "closed" {
 					stateIcon = "○"
 				}
-				items = append(items, prefix+stateIcon+" "+displayText)
+				labelText := ""
+				if len(item.Labels) > 0 {
+					maxLabels := 3
+					displayLabels := item.Labels
+					if len(displayLabels) > maxLabels {
+						displayLabels = displayLabels[:maxLabels]
+						labelText = fmt.Sprintf(" [%s +%d]", strings.Join(displayLabels, ", "), len(item.Labels)-maxLabels)
+					} else {
+						labelText = fmt.Sprintf(" [%s]", strings.Join(displayLabels, ", "))
+					}
+				}
+				items = append(items, prefix+stateIcon+" "+displayText+labelText)
 			} else {
 				items = append(items, prefix+item.Title)
 			}

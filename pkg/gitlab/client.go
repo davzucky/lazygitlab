@@ -12,6 +12,7 @@ type Client interface {
 	GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitlab.Issue, error)
 	GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error)
 	GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error)
+	GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error)
 	Close() error
 }
 
@@ -23,6 +24,11 @@ type GetIssuesOptions struct {
 
 type GetMergeRequestsOptions struct {
 	State   string
+	Page    int64
+	PerPage int64
+}
+
+type GetLabelsOptions struct {
 	Page    int64
 	PerPage int64
 }
@@ -160,6 +166,44 @@ func (c *client) GetMergeRequests(projectPath string, opts *GetMergeRequestsOpti
 	}
 
 	return allMRs, nil
+}
+
+func (c *client) GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error) {
+	options := &gitlab.ListLabelsOptions{
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	if opts != nil {
+		if opts.PerPage > 0 {
+			options.ListOptions.PerPage = opts.PerPage
+		}
+	}
+
+	var allLabels []*gitlab.Label
+	var page int64 = 1
+	if opts != nil && opts.Page > 0 {
+		page = int64(opts.Page)
+	}
+
+	for {
+		options.ListOptions.Page = page
+		labels, resp, err := c.client.Labels.ListLabels(projectPath, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list labels for project %s: %w", projectPath, err)
+		}
+
+		allLabels = append(allLabels, labels...)
+
+		if resp.NextPage == 0 || (opts != nil && opts.Page > 0) {
+			break
+		}
+
+		page = resp.NextPage
+	}
+
+	return allLabels, nil
 }
 
 func (c *client) Close() error {
