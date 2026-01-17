@@ -70,21 +70,20 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 
 ### Status Bar Display
 
- - Status bar displays project context and connection status
- - Add view-specific information conditionally using currentView check
- - Pattern: `if m.currentView == IssuesView { status += " | Filter: " + m.issueFilter.String() }`
- - Keep status bar information concise to avoid cluttering the UI
- - For temporary messages (e.g., clipboard confirmation), check message field first and return early: `if m.clipboardMessage != "" { return m.styles.StatusBar.Render(m.clipboardMessage) }`
+- Status bar displays project context and connection status
+- Add view-specific information conditionally using currentView check
+- Pattern: `if m.currentView == IssuesView { status += " | Filter: " + m.issueFilter.String() }`
+- Keep status bar information concise to avoid cluttering the UI
+- For temporary messages (e.g., clipboard confirmation), check message field first and return early: `if m.clipboardMessage != "" { return m.styles.StatusBar.Render(m.clipboardMessage) }`
 
 ### Temporary Status Messages
 
- - Use a string field in Model (e.g., `clipboardMessage`) to store temporary message
- - Create a message type for auto-hide (e.g., `clipboardClearMsg`) with empty struct
- - Use `tea.Tick(duration, func(time.Time) tea.Msg)` to auto-hide after specified time
- - Handle the clear message in Update() method by resetting the message field
- - Example: `return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clipboardClearMsg{} })`
- - Temporary messages take priority over normal status bar content
-
+- Use a string field in Model (e.g., `clipboardMessage`) to store temporary message
+- Create a message type for auto-hide (e.g., `clipboardClearMsg`) with empty struct
+- Use `tea.Tick(duration, func(time.Time) tea.Msg)` to auto-hide after specified time
+- Handle the clear message in Update() method by resetting the message field
+- Example: `return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clipboardClearMsg{} })`
+- Temporary messages take priority over normal status bar content
 
 ### Data Display
 
@@ -149,31 +148,31 @@ The utils package provides shared utility functions, including logging functiona
 - Open log file with `os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)`
 - Sync file after each write: `file.Sync()`
 
- ### Integration
+### Integration
 
- - Add `--debug` flag to main.go for enabling verbose logging
- - Import utils package in main.go and call `utils.InitLogger(*debugFlag)`
- - Use `utils.Debug()`, `utils.Info()`, and `utils.Error()` throughout the codebase
- - Log important events: config loading, validation, API calls, errors
- - Debug mode helps diagnose issues in production without cluttering normal operation
+- Add `--debug` flag to main.go for enabling verbose logging
+- Import utils package in main.go and call `utils.InitLogger(*debugFlag)`
+- Use `utils.Debug()`, `utils.Info()`, and `utils.Error()` throughout the codebase
+- Log important events: config loading, validation, API calls, errors
+- Debug mode helps diagnose issues in production without cluttering normal operation
 
 ### Clipboard Utilities
 
- - CopyToClipboard function provides cross-platform clipboard access
- - Uses OS-specific tools: xclip (Linux), pbcopy (macOS), clip (Windows)
- - For Linux: uses xclip with -selection clipboard flag for system clipboard
- - Returns helpful error message when xclip is not installed on Linux
- - Use runtime.GOOS to detect operating system at runtime
- - Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
+- CopyToClipboard function provides cross-platform clipboard access
+- Uses OS-specific tools: xclip (Linux), pbcopy (macOS), clip (Windows)
+- For Linux: uses xclip with -selection clipboard flag for system clipboard
+- Returns helpful error message when xclip is not installed on Linux
+- Use runtime.GOOS to detect operating system at runtime
+- Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
 
 ### Browser Utilities
 
- - OpenInBrowser function provides cross-platform browser opening
- - Uses OS-specific commands: xdg-open (Linux), open (macOS), start (Windows)
- - For Linux: uses cmd.Start() instead of cmd.Run() for xdg-open to avoid blocking
- - Returns helpful error message when xdg-open is not installed on Linux
- - Use runtime.GOOS to detect operating system at runtime
- - Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
+- OpenInBrowser function provides cross-platform browser opening
+- Uses OS-specific commands: xdg-open (Linux), open (macOS), start (Windows)
+- For Linux: uses cmd.Start() instead of cmd.Run() for xdg-open to avoid blocking
+- Returns helpful error message when xdg-open is not installed on Linux
+- Use runtime.GOOS to detect operating system at runtime
+- Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
 
 
 # Loading and Error States

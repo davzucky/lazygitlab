@@ -44,7 +44,7 @@ func openInBrowserMac(url string) error {
 }
 
 func openInBrowserWindows(url string) error {
-	cmd := exec.Command("cmd", "/c", "start", url)
+	cmd := exec.Command("cmd", "/c", "start", "", url)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to open browser: %w", err)
 	}

@@ -50,7 +50,8 @@ func copyToClipboardMac(text string) error {
 }
 
 func copyToClipboardWindows(text string) error {
-	cmd := exec.Command("cmd", "/c", "echo", text, "|", "clip")
+	cmd := exec.Command("cmd", "/c", "clip")
+	cmd.Stdin = strings.NewReader(text)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to copy to clipboard: %w", err)
 	}

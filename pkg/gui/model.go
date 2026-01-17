@@ -386,23 +386,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			}
-			if len(msg.String()) == 1 {
+			switch msg.Type {
+			case tea.KeyBackspace:
 				if m.issueFormField == "title" {
-					if msg.Type == tea.KeyBackspace {
-						if len(m.issueFormTitle) > 0 {
-							m.issueFormTitle = m.issueFormTitle[:len(m.issueFormTitle)-1]
-						}
-					} else if msg.Type == tea.KeyRunes {
-						m.issueFormTitle += string(msg.Runes)
+					if len(m.issueFormTitle) > 0 {
+						m.issueFormTitle = m.issueFormTitle[:len(m.issueFormTitle)-1]
 					}
 				} else {
-					if msg.Type == tea.KeyBackspace {
-						if len(m.issueFormDesc) > 0 {
-							m.issueFormDesc = m.issueFormDesc[:len(m.issueFormDesc)-1]
-						}
-					} else if msg.Type == tea.KeyRunes {
-						m.issueFormDesc += string(msg.Runes)
+					if len(m.issueFormDesc) > 0 {
+						m.issueFormDesc = m.issueFormDesc[:len(m.issueFormDesc)-1]
 					}
+				}
+			case tea.KeyRunes:
+				if m.issueFormField == "title" {
+					m.issueFormTitle += string(msg.Runes)
+				} else {
+					m.issueFormDesc += string(msg.Runes)
 				}
 			}
 			return m, nil
