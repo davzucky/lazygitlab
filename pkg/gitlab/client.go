@@ -13,6 +13,8 @@ type Client interface {
 	GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error)
 	GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error)
 	GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error)
+	GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error)
+	CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error)
 	Close() error
 }
 
@@ -31,6 +33,16 @@ type GetMergeRequestsOptions struct {
 type GetLabelsOptions struct {
 	Page    int64
 	PerPage int64
+}
+
+type GetIssueNotesOptions struct {
+	Page    int64
+	PerPage int64
+}
+
+type CreateIssueNoteOptions struct {
+	Body     string
+	Internal bool
 }
 
 type client struct {
@@ -204,6 +216,66 @@ func (c *client) GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([
 	}
 
 	return allLabels, nil
+}
+
+func (c *client) GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error) {
+	options := &gitlab.ListIssueNotesOptions{
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	if opts != nil {
+		if opts.PerPage > 0 {
+			options.ListOptions.PerPage = opts.PerPage
+		}
+	}
+
+	var allNotes []*gitlab.Note
+	var page int64 = 1
+	if opts != nil && opts.Page > 0 {
+		page = int64(opts.Page)
+	}
+
+	for {
+		options.ListOptions.Page = page
+		notes, resp, err := c.client.Notes.ListIssueNotes(projectPath, issueIID, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list notes for issue %d in project %s: %w", issueIID, projectPath, err)
+		}
+
+		allNotes = append(allNotes, notes...)
+
+		if resp.NextPage == 0 || (opts != nil && opts.Page > 0) {
+			break
+		}
+
+		page = resp.NextPage
+	}
+
+	return allNotes, nil
+}
+
+func (c *client) CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error) {
+	options := &gitlab.CreateIssueNoteOptions{}
+
+	if opts != nil {
+		if opts.Body != "" {
+			options.Body = &opts.Body
+		}
+		if opts.Internal {
+			options.Internal = &opts.Internal
+		}
+	}
+
+	note, _, err := c.client.Notes.CreateIssueNote(projectPath, issueIID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create note for issue %d in project %s: %w", issueIID, projectPath, err)
+	}
+	if note == nil {
+		return nil, fmt.Errorf("received nil note from API")
+	}
+	return note, nil
 }
 
 func (c *client) Close() error {

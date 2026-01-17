@@ -49,3 +49,20 @@ Thread: https://ampcode.com/threads/$(echo $AMP_CURRENT_THREAD_ID)
 - To display colored labels, would need to fetch project labels separately and create a label name -> color mapping
 - List view already labels in details panel (lines 358-360) without colors, which meets acceptance criteria for "if terminal supports"
 ---
+## Sat Jan 17 2026 - US-006
+Thread: https://ampcode.com/threads/$(echo $AMP_CURRENT_THREAD_ID)
+- Added GetIssueNotesOptions and CreateIssueNoteOptions structs to client.go
+- Added ListIssueNotes and CreateIssueNote methods to Client interface
+- Implemented GetIssueNotes method in client.go with automatic pagination (100 per page)
+- Implemented CreateIssueNote method in client.go with proper error handling
+- Added notes field to mockClient struct along with notesErr and createNoteErr
+- Implemented GetIssueNotes and CreateIssueNote mock methods in client_test.go
+- All typechecks pass
+
+**Learnings for future iterations:**
+- GitLab Go SDK NotesService provides ListIssueNotes() and CreateIssueNote() methods
+- CreateIssueNoteOptions requires pointer to string for Body field, not a direct string
+- ListIssueNotesOptions inherits ListOptions for pagination configuration
+- Note type from GitLab SDK includes author, created_at, body, and other metadata needed for display
+- Follow the same pattern as other API methods: Options struct → Interface method → Implementation with pagination → Mock implementation
+---
