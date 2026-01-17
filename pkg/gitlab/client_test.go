@@ -8,14 +8,23 @@ import (
 )
 
 type mockClient struct {
-	user         *gitlab.User
-	project      *gitlab.Project
-	issues       []*gitlab.Issue
-	mergeReqs    []*gitlab.BasicMergeRequest
-	userErr      error
-	projectErr   error
-	issuesErr    error
-	mergeReqsErr error
+	user           *gitlab.User
+	project        *gitlab.Project
+	issues         []*gitlab.Issue
+	issue          *gitlab.Issue
+	mergeReqs      []*gitlab.BasicMergeRequest
+	labels         []*gitlab.Label
+	notes          []*gitlab.Note
+	userErr        error
+	projectErr     error
+	issuesErr      error
+	issueErr       error
+	mergeReqsErr   error
+	labelsErr      error
+	notesErr       error
+	createNoteErr  error
+	createIssueErr error
+	updateIssueErr error
 }
 
 func (m *mockClient) GetCurrentUser() (*gitlab.User, error) {
@@ -30,8 +39,35 @@ func (m *mockClient) GetIssues(projectPath string, opts *GetIssuesOptions) ([]*g
 	return m.issues, m.issuesErr
 }
 
+func (m *mockClient) GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error) {
+	return m.issue, m.issueErr
+}
+
 func (m *mockClient) GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error) {
 	return m.mergeReqs, m.mergeReqsErr
+}
+
+func (m *mockClient) GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error) {
+	return m.labels, m.labelsErr
+}
+
+func (m *mockClient) GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error) {
+	return m.notes, m.notesErr
+}
+
+func (m *mockClient) CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error) {
+	if len(m.notes) > 0 {
+		return m.notes[0], m.createNoteErr
+	}
+	return nil, m.createNoteErr
+}
+
+func (m *mockClient) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {
+	return m.issue, m.createIssueErr
+}
+
+func (m *mockClient) UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error) {
+	return m.issue, m.updateIssueErr
 }
 
 func (m *mockClient) Close() error {

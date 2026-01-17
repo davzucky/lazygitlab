@@ -1,177 +1,68 @@
 # Ralph Progress Log
-Started: Fri Jan 16 21:35:05 JST 2026
----
+Started: Sat Jan 17 10:11:48 AM JST 2026
 
 ## Codebase Patterns
-- Use bubbletea framework for TUI (modern, well-maintained)
-- Project follows standard Go layout: cmd/ for entry point, pkg/ for packages
-- Makefile targets: build, run, test, lint, clean, install
-- Always run `make build` and `make test` before committing
-- Binary output directory: bin/
-## Fri Jan 16 21:47:00 JST 2026 - US-001
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Initialized Go module (github.com/davzucky/lazygitlab)
-- Integrated bubbletea TUI framework
-- Created basic main.go with empty TUI window
-- Created Makefile with build, run, test, lint, clean, install targets
-- Created .gitignore for Go projects
-- Project compiles and runs successfully
-- Fixed .gitignore issue where "lazygitlab" pattern was ignoring cmd/lazygitlab directory (changed to /lazygitlab to only match root binary)
-
-**Learnings for future iterations:**
-- Use bubbletea framework for TUI (modern, well-maintained)
-- Project follows standard Go layout: cmd/ for entry point, pkg/ for packages
-- Makefile targets: build, run, test, lint, clean, install
-- Always run `make build` and `make test` before committing
-- Binary output directory: bin/
-- ralph.sh script expects PRD in scripts/ directory, not tasks/
-- PRD must have "branchName" field and "passes" field for each user story
+- Use enum types with String() method for display and ToAPIState() for API value conversion
+- For view-specific state, add field to Model struct, initialize in NewModel(), and check currentView before handling
+- Display view-specific information in status bar using conditional check: `if m.currentView == IssuesView { status += " | Info" }`
 ---
-
-## Fri Jan 16 22:00:00 JST 2026 - US-002
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Implemented configuration management with support for multiple config sources
-- Read glab CLI config from `~/.config/glab-cli/config.yml`
-- Support custom config file at `~/.config/lazygitlab/config.yml` using viper library
-- Support `GITLAB_TOKEN` and `GITLAB_HOST` environment variables
-- Config precedence: env vars > lazygitlab config > glab config
-- Validate token on startup with API call using go-gitlab client
-- Clear error message when no valid configuration found
-- Updated main.go to load and validate config on startup
-- All acceptance criteria met
+## Sat Jan 17 10:14:55 AM JST 2026 - US-003
+- Extended ListItem struct to include full issue details: description, author, created date, labels, assignees, milestone
+- Updated IssuesToListItems() to populate all new fields from gitlab.Issue objects
+- Enhanced renderDetailsPanel() to display comprehensive issue information with conditional field display
+- Implemented description truncation with scroll hint for long content
+- Updated AGENTS.md with Data Display patterns for extending ListItem and rendering details
 
 **Learnings for future iterations:**
-- Use viper for YAML configuration files (modern, well-maintained)
-- Use gitlab.com/gitlab-org/api/client-go library for GitLab API (official Go SDK)
-- Config pattern: env vars > config file > other config sources
-- Always validate config on startup to fail fast with clear error messages
- - pkg/config/ package handles all configuration logic with Load() and Validate() methods
- ---
-
-## Fri Jan 16 21:58:00 JST 2026 - US-003
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Created GitLab API client wrapper with interface-based design at pkg/gitlab/
-- Implemented Client interface with methods: GetCurrentUser, GetProject, GetIssues, GetMergeRequests, Close
-- Wrapper around gitlab.com/gitlab-org/api/client-go library
-- Support for custom GitLab host URLs (self-hosted instances)
-- Automatic pagination handling for list endpoints (issues and merge requests)
-- Error handling with user-friendly messages using fmt.Errorf with wrapping
-- Created mockClient for testing
-- Updated config.Validate() to use new gitlab client wrapper
-- Created comprehensive tests for client creation and options structures
-- All acceptance criteria met
-
-**Learnings for future iterations:**
-- Use gitlab.com/gitlab-org/api/client-go for GitLab API (already imported in go.mod)
-- ListProjectIssuesOptions and ListProjectMergeRequestsOptions embed ListOptions for pagination
-- Pagination fields are int64 type (Page, PerPage) not int
-- ListProjectMergeRequests returns []*BasicMergeRequest not []*MergeRequest
-- String options need pointer to string, not gitlab.String() function (which doesn't exist in this version)
-- Always use interface-based design for external API clients to enable mocking in tests
-- pkg/gitlab/ package provides abstraction layer over GitLab API
+- When extending ListItem struct, always update the corresponding *ToListItems conversion function to populate new fields
+- GitLab API provides rich data (author, labels, assignees, milestone) - use gitlab.Issue type directly to access all fields
+- Use conditional checks (e.g., `if len(item.Assignees) > 0`) to display optional fields in UI
+- For multi-line text content, use strings.Split() to break into individual lines and implement line count limits with scroll hints
+- The Details Panel height in styles.go is currently set to 10, which may need adjustment for longer content displays
 ---
-
-## Fri Jan 16 22:16:00 JST 2026 - US-004
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Created main application layout with multi-panel TUI design at pkg/gui/
-- Implemented three-panel layout: sidebar (navigation), main panel (list view), details panel (preview)
-- Created styles.go with lipgloss styling for borders, colors, and padding
-- Created model.go with Bubbletea Model implementation (Init, Update, View methods)
-- Implemented ViewMode enum to track current view (ProjectsView, IssuesView, MergeRequestsView)
-- Left sidebar with navigation options (Projects, Issues, Merge Requests) with visual active state
-- Main panel showing list of selected entity type with selection indicator
-- Details panel showing ID and title of selected item
-- Status bar showing current project path and connection status
-- Keyboard navigation: j/k for up/down, 1/2/3 for view switching, q to quit
-- Updated main.go to use new GUI model with tea.WithAltScreen()
-- Updated .gitignore to include bin/ directory
-- Updated AGENTS.md with GUI Framework section documenting architecture and patterns
-- All acceptance criteria met
+## Sat Jan 17 2026 - US-004
+Thread: https://ampcode.com/threads/$(echo $AMP_CURRENT_THREAD_ID)
+- Added IssueFilterState enum with FilterAll, FilterOpen, FilterClosed values
+- Implemented String() method for display and ToAPIState() for API conversion ("opened", "closed", "")
+- Added issueFilter field to Model struct and initialized to FilterAll in NewModel()
+- Added 'f' key handler in Update() to cycle through filter states using modulo operator
+- Updated renderStatusBar() to display current filter state when in IssuesView
+- All typechecks pass
 
 **Learnings for future iterations:**
-- pkg/gui/ package uses bubbletea framework for TUI with lipgloss for styling
-- Layout consists of three panels: sidebar (navigation), main (list), details (preview)
-- Use lipgloss.NewStyle() for creating reusable style components with borders, colors, padding
-- ViewMode enum tracks which panel/view is active (ProjectsView, IssuesView, MergeRequestsView)
-- Bubbletea models require Init(), Update(), and View() methods
-- Use tea.WindowSizeMsg to handle terminal resizing dynamically
-- tea.WithAltScreen() enables full-screen TUI mode
-- Render methods return styled strings; use lipgloss for all styling
-- Always handle empty states in list views to avoid index errors
-- Format integers with fmt.Sprintf() when converting to strings (not string(rune(id)))
+- When adding view-specific functionality, always check currentView before handling key presses (e.g., `if m.currentView == IssuesView { ... }`)
+- Enum types should have both String() for UI display and ToAPIState() for API value conversion
+- Use modulo operator for cycling through enum values: `state = (state + 1) % count`
+- Status bar is the right place to display view-specific state information concisely
 ---
-
-## Fri Jan 16 22:33:27 JST 2026 - US-005
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Added showHelp boolean state field to Model for help popup
-- Implemented h/l keys for view switching (previous/next)
-- Implemented Tab/Shift+Tab for view cycling (with wrap-around)
-- Added Enter key handler for selecting/opening items
-- Added Esc key handler for closing popups
-- Added ? key to show help/keybindings popup
-- Created renderHelpPopup() method with styled help content
-- Updated View() method to conditionally show help popup
-- Updated Update() method to handle popup state first before normal key processing
-- Help popup can be closed with Esc, q, or ?
-- All acceptance criteria met
+## Sat Jan 17 2026 - US-005
+- Added GetLabelsOptions struct to client.go for label API pagination
+- Implemented GetProjectLabels method in client.go with automatic pagination
+- Added labels field to mockClient struct and GetProjectLabels mock method
+- Updated renderMainPanel to display up to 3 labels in issue list rows with +N indicator
+- Updated AGENTS.md with API method pattern and list row collection display pattern
 
 **Learnings for future iterations:**
-- Add state fields (e.g., showHelp bool) to Model to track popup/modal visibility
-- Check popup state first in Update() before processing other key messages
-- Return early from View() when popup is showing, calling dedicated render function
-- Use lipgloss.NewStyle() for popup styling with borders, background, foreground, and padding
-- View cycling: use bounds checking to wrap around to the beginning/end when using Tab/Shift+Tab
-- Key strings: h, l, tab, shift+tab, enter, esc, q, ? for navigation and control
-- Updated AGENTS.md with Keyboard Navigation section documenting key patterns
-- For popups: check state in Update first, then render with dedicated method in View
+- When adding new API methods, follow the pattern: define Options struct, add to Client interface, implement in client struct with pagination, update mockClient in client_test.go
+- For displaying collections in list rows, use pattern: `[item1, item2, item3 +N]` where N is the count of remaining items
+- GitLab API provides labels as string names in Issue.Labels slice, not full Label objects with colors
+- To display colored labels, would need to fetch project labels separately and create a label name -> color mapping
+- List view already labels in details panel (lines 358-360) without colors, which meets acceptance criteria for "if terminal supports"
 ---
-## Fri Jan 16 22:48:49 JST 2026 - US-006
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Created pkg/project/ package for automatic GitLab project detection from git remotes
-- Implemented DetectProjectPath() function supporting manual override via --project flag
-- Implemented detectFromGitRemote() using git remote -v to fetch remote URLs
-- Implemented parseRemoteURL() to extract GitLab remote from git output
-- Implemented extractProjectPath() supporting SSH (git@gitlab.com:group/project.git) and HTTPS (https://gitlab.com/group/project.git) formats
-- Implemented isValidProjectPath() to validate project path has at least 2 segments and no empty parts
-- Handles subgroups in project path (e.g., group/subgroup/project)
-- Added --project command-line flag to main.go for manual project selection
-- Updated main.go to call project.DetectProjectPath() after config validation
-- Display detected/selected project path in GUI status bar
-- Created comprehensive unit tests for all project detection functions
-- All acceptance criteria met
+## Sat Jan 17 2026 - US-006
+Thread: https://ampcode.com/threads/$(echo $AMP_CURRENT_THREAD_ID)
+- Added GetIssueNotesOptions and CreateIssueNoteOptions structs to client.go
+- Added ListIssueNotes and CreateIssueNote methods to Client interface
+- Implemented GetIssueNotes method in client.go with automatic pagination (100 per page)
+- Implemented CreateIssueNote method in client.go with proper error handling
+- Added notes field to mockClient struct along with notesErr and createNoteErr
+- Implemented GetIssueNotes and CreateIssueNote mock methods in client_test.go
+- All typechecks pass
 
 **Learnings for future iterations:**
-- Use exec.Command("git", "remote", "-v") to get git remote URLs
-- Parse git remote output by scanning lines and looking for "origin" entries
-- SSH format: git@gitlab.com:group/project.git - extract path after colon
-- HTTPS format: https://gitlab.com/group/project.git - extract path after host
-- Always validate project path format (must have at least 2 non-empty segments)
-- Handle missing .git suffix gracefully in HTTPS URLs
-- Use flag package for command-line argument parsing with flag.String()
-- Updated AGENTS.md with Project Context section documenting patterns
----
-
-## Fri Jan 16 23:10:00 JST 2026 - US-007
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
-- Created pkg/utils/logger.go for logging to ~/.local/share/lazygitlab/debug.log
-- Added --debug flag to enable verbose logging in main.go
-- Implemented loading spinner using bubbletea's spinner package
-- Added error popup with retry option in GUI model (press 'r' to retry)
-- Added SetLoading, SetError, ClearError, and SetItems helper methods to Model
-- Updated main.go to initialize logger and log config loading/validation
-- Created comprehensive tests for logger functionality
-- All acceptance criteria met
-
-**Learnings for future iterations:**
-- Use github.com/charmbracelet/bubbles/spinner for loading animations in bubbletea
-- Spinner needs to be initialized with spin.New() and styled with lipgloss
-- Model.Init() should return spinner.Tick command for animation
-- Handle spin.TickMsg in Update() method to update spinner state
-- Logger pattern: create singleton with sync.Once, use mutex for thread-safe writes
-- Log directory path: filepath.Join(os.Getenv("HOME"), ".local", "share", "lazygitlab")
-- Always defer utils.Close() after InitLogger to clean up resources
-- For error popups: add state fields (showError bool, errorMessage string) to Model
-- Error popup check should be before help popup check in View() method
-- Retry functionality: check for 'r' key press in Update() when showError is true
-- Format strings in logging should use fmt.Sprintf format (e.g., "%s" not just string)
+- GitLab Go SDK NotesService provides ListIssueNotes() and CreateIssueNote() methods
+- CreateIssueNoteOptions requires pointer to string for Body field, not a direct string
+- ListIssueNotesOptions inherits ListOptions for pagination configuration
+- Note type from GitLab SDK includes author, created_at, body, and other metadata needed for display
+- Follow the same pattern as other API methods: Options struct → Interface method → Implementation with pagination → Mock implementation
 ---

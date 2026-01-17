@@ -10,7 +10,13 @@ type Client interface {
 	GetCurrentUser() (*gitlab.User, error)
 	GetProject(projectPath string) (*gitlab.Project, error)
 	GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitlab.Issue, error)
+	GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error)
 	GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error)
+	GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error)
+	GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error)
+	CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error)
+	CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error)
+	UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error)
 	Close() error
 }
 
@@ -24,6 +30,32 @@ type GetMergeRequestsOptions struct {
 	State   string
 	Page    int64
 	PerPage int64
+}
+
+type GetLabelsOptions struct {
+	Page    int64
+	PerPage int64
+}
+
+type GetIssueNotesOptions struct {
+	Page    int64
+	PerPage int64
+}
+
+type CreateIssueNoteOptions struct {
+	Body     string
+	Internal bool
+}
+
+type CreateIssueOptions struct {
+	Title       string
+	Description string
+}
+
+type UpdateIssueOptions struct {
+	Title       string
+	Description string
+	StateEvent  string
 }
 
 type client struct {
@@ -109,6 +141,17 @@ func (c *client) GetIssues(projectPath string, opts *GetIssuesOptions) ([]*gitla
 	return allIssues, nil
 }
 
+func (c *client) GetProjectIssue(projectPath string, issueIID int64) (*gitlab.Issue, error) {
+	issue, _, err := c.client.Issues.GetIssue(projectPath, issueIID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get issue %d from project %s: %w", issueIID, projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("issue not found: %d", issueIID)
+	}
+	return issue, nil
+}
+
 func (c *client) GetMergeRequests(projectPath string, opts *GetMergeRequestsOptions) ([]*gitlab.BasicMergeRequest, error) {
 	options := &gitlab.ListProjectMergeRequestsOptions{
 		ListOptions: gitlab.ListOptions{
@@ -148,6 +191,151 @@ func (c *client) GetMergeRequests(projectPath string, opts *GetMergeRequestsOpti
 	}
 
 	return allMRs, nil
+}
+
+func (c *client) GetProjectLabels(projectPath string, opts *GetLabelsOptions) ([]*gitlab.Label, error) {
+	options := &gitlab.ListLabelsOptions{
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	if opts != nil {
+		if opts.PerPage > 0 {
+			options.ListOptions.PerPage = opts.PerPage
+		}
+	}
+
+	var allLabels []*gitlab.Label
+	var page int64 = 1
+	if opts != nil && opts.Page > 0 {
+		page = int64(opts.Page)
+	}
+
+	for {
+		options.ListOptions.Page = page
+		labels, resp, err := c.client.Labels.ListLabels(projectPath, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list labels for project %s: %w", projectPath, err)
+		}
+
+		allLabels = append(allLabels, labels...)
+
+		if resp.NextPage == 0 || (opts != nil && opts.Page > 0) {
+			break
+		}
+
+		page = resp.NextPage
+	}
+
+	return allLabels, nil
+}
+
+func (c *client) GetIssueNotes(projectPath string, issueIID int64, opts *GetIssueNotesOptions) ([]*gitlab.Note, error) {
+	options := &gitlab.ListIssueNotesOptions{
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	if opts != nil {
+		if opts.PerPage > 0 {
+			options.ListOptions.PerPage = opts.PerPage
+		}
+	}
+
+	var allNotes []*gitlab.Note
+	var page int64 = 1
+	if opts != nil && opts.Page > 0 {
+		page = int64(opts.Page)
+	}
+
+	for {
+		options.ListOptions.Page = page
+		notes, resp, err := c.client.Notes.ListIssueNotes(projectPath, issueIID, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list notes for issue %d in project %s: %w", issueIID, projectPath, err)
+		}
+
+		allNotes = append(allNotes, notes...)
+
+		if resp.NextPage == 0 || (opts != nil && opts.Page > 0) {
+			break
+		}
+
+		page = resp.NextPage
+	}
+
+	return allNotes, nil
+}
+
+func (c *client) CreateIssueNote(projectPath string, issueIID int64, opts *CreateIssueNoteOptions) (*gitlab.Note, error) {
+	options := &gitlab.CreateIssueNoteOptions{}
+
+	if opts != nil {
+		if opts.Body != "" {
+			options.Body = &opts.Body
+		}
+		if opts.Internal {
+			options.Internal = &opts.Internal
+		}
+	}
+
+	note, _, err := c.client.Notes.CreateIssueNote(projectPath, issueIID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create note for issue %d in project %s: %w", issueIID, projectPath, err)
+	}
+	if note == nil {
+		return nil, fmt.Errorf("received nil note from API")
+	}
+	return note, nil
+}
+
+func (c *client) CreateIssue(projectPath string, opts *CreateIssueOptions) (*gitlab.Issue, error) {
+	options := &gitlab.CreateIssueOptions{}
+
+	if opts != nil {
+		if opts.Title != "" {
+			options.Title = &opts.Title
+		}
+		if opts.Description != "" {
+			options.Description = &opts.Description
+		}
+	}
+
+	issue, _, err := c.client.Issues.CreateIssue(projectPath, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create issue in project %s: %w", projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("received nil issue from API")
+	}
+	return issue, nil
+}
+
+func (c *client) UpdateIssue(projectPath string, issueIID int64, opts *UpdateIssueOptions) (*gitlab.Issue, error) {
+	options := &gitlab.UpdateIssueOptions{}
+
+	if opts != nil {
+		if opts.Title != "" {
+			options.Title = &opts.Title
+		}
+		if opts.Description != "" {
+			options.Description = &opts.Description
+		}
+		if opts.StateEvent != "" {
+			options.StateEvent = &opts.StateEvent
+		}
+	}
+
+	issue, _, err := c.client.Issues.UpdateIssue(projectPath, issueIID, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update issue %d in project %s: %w", issueIID, projectPath, err)
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("received nil issue from API")
+	}
+	return issue, nil
 }
 
 func (c *client) Close() error {

@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/davzucky/lazygitlab/pkg/config"
+	"github.com/davzucky/lazygitlab/pkg/gitlab"
 	"github.com/davzucky/lazygitlab/pkg/gui"
 	"github.com/davzucky/lazygitlab/pkg/project"
 	"github.com/davzucky/lazygitlab/pkg/utils"
@@ -79,7 +80,18 @@ func main() {
 
 	connection := "Connected to " + cfg.Host
 
-	model := gui.NewModel(projectPath, connection)
+	glClient, err := gitlab.NewClient(cfg.Token, cfg.Host)
+	if err != nil {
+		utils.Error("Failed to create GitLab client: %v", err)
+		p := tea.NewProgram(errorModel{error: fmt.Sprintf("Failed to create GitLab client: %v", err)})
+		if _, runErr := p.Run(); runErr != nil {
+			utils.Error("Failed to run error UI: %v", runErr)
+		}
+		os.Exit(1)
+	}
+	defer glClient.Close()
+
+	model := gui.NewModel(projectPath, cfg.Host, connection, glClient)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		os.Exit(1)

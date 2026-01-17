@@ -10,12 +10,14 @@ The gitlab package provides an abstraction layer over GitLab's Go SDK (gitlab.co
 - Call `client.Close()` when done to clean up resources
 - Pagination is automatic for list endpoints (issues, merge requests) unless you specify a specific page
 - All API errors are wrapped with context using `fmt.Errorf("context: %w", err)`
+- When adding new API methods: define Options struct, add to Client interface, implement in client struct with pagination, update mockClient in client_test.go
 
 ### Type Notes
 
 - `ListProjectMergeRequests` returns `[]*gitlab.BasicMergeRequest`, not `[]*gitlab.MergeRequest`
 - Pagination fields (Page, PerPage) are `int64`, not `int`
 - String options need pointer to string (`&str`), not a helper function like `gitlab.String()`
+- Issue IID (internal ID) is `int64`, used for getting single issues via `GetProjectIssue`
 
 ### Testing
 
@@ -56,6 +58,42 @@ The gui package provides the TUI (Terminal User Interface) using the bubbletea f
 - For popup/modals: add a state field (e.g., `showHelp bool`) and check it first in Update method
 - Popup rendering: return early from View method if popup is showing, calling a dedicated render function
 - View cycling: use modulo or bounds checking for Tab/Shift+Tab to wrap around views
+- For view-specific actions (e.g., filtering issues), check `currentView` before handling the key press: `if m.currentView == IssuesView { ... }`
+
+### View-Specific State Management
+
+- Add view-specific state fields to the Model struct (e.g., `issueFilter IssueFilterState`)
+- Initialize all new state fields in `NewModel()` constructor function
+- Define enum types for state values with String() method for display
+- If state needs API conversion, add ToAPIState() or similar method
+- Use modulo operator for cycling through enum values: `state = (state + 1) % count`
+
+### Status Bar Display
+
+- Status bar displays project context and connection status
+- Add view-specific information conditionally using currentView check
+- Pattern: `if m.currentView == IssuesView { status += " | Filter: " + m.issueFilter.String() }`
+- Keep status bar information concise to avoid cluttering the UI
+- For temporary messages (e.g., clipboard confirmation), check message field first and return early: `if m.clipboardMessage != "" { return m.styles.StatusBar.Render(m.clipboardMessage) }`
+
+### Temporary Status Messages
+
+- Use a string field in Model (e.g., `clipboardMessage`) to store temporary message
+- Create a message type for auto-hide (e.g., `clipboardClearMsg`) with empty struct
+- Use `tea.Tick(duration, func(time.Time) tea.Msg)` to auto-hide after specified time
+- Handle the clear message in Update() method by resetting the message field
+- Example: `return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clipboardClearMsg{} })`
+- Temporary messages take priority over normal status bar content
+
+### Data Display
+
+- `ListItem` struct can be extended with additional fields (e.g., description, author, labels, assignees, milestone)
+- When adding fields to `ListItem`, update the corresponding `IssuesToListItems` (or similar) function to populate them
+- Use `cases.Title(language.English).String()` for state strings (e.g., "open" → "Open")
+- For optional fields in `renderDetailsPanel`, check if present before displaying (e.g., `if len(item.Assignees) > 0`)
+- For long text content (descriptions), truncate with line count limit and show remaining line count hint
+- Use `strings.Split(text, "\n")` to break multi-line content into individual lines for display
+- For displaying collections in list rows (e.g., labels), limit to N items and show "+M" indicator for remaining: `[label1, label2, label3 +2]`
 
 # Project Context
 
@@ -118,6 +156,25 @@ The utils package provides shared utility functions, including logging functiona
 - Log important events: config loading, validation, API calls, errors
 - Debug mode helps diagnose issues in production without cluttering normal operation
 
+### Clipboard Utilities
+
+- CopyToClipboard function provides cross-platform clipboard access
+- Uses OS-specific tools: xclip (Linux), pbcopy (macOS), clip (Windows)
+- For Linux: uses xclip with -selection clipboard flag for system clipboard
+- Returns helpful error message when xclip is not installed on Linux
+- Use runtime.GOOS to detect operating system at runtime
+- Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
+
+### Browser Utilities
+
+- OpenInBrowser function provides cross-platform browser opening
+- Uses OS-specific commands: xdg-open (Linux), open (macOS), start (Windows)
+- For Linux: uses cmd.Start() instead of cmd.Run() for xdg-open to avoid blocking
+- Returns helpful error message when xdg-open is not installed on Linux
+- Use runtime.GOOS to detect operating system at runtime
+- Check exec.Error type to detect missing commands: `if execErr, ok := err.(*exec.Error); ok { ... }`
+
+
 # Loading and Error States
 
 ## GUI Model Patterns
@@ -144,3 +201,15 @@ The GUI model includes built-in support for loading indicators and error popups.
 - Create `renderErrorPopup()` method with styled error message
 - Error popup styling: use red border (`lipgloss.Color("196")`) and dark red background
 - Add helper methods: `SetError(message string)`, `ClearError()`
+
+### Confirmation Popup
+
+- Add `showConfirmPopup bool`, `confirmAction string`, and `confirmIssueIID int64` fields to Model struct
+- Check `showError` before `showConfirmPopup` in both `Update()` and `View()` methods (error takes priority)
+- In `Update()`: handle `y` for confirm, `n`/`esc` for cancel
+- In `View()`: return `m.renderConfirmPopup()` if showing, before other popups
+- Create `renderConfirmPopup()` method with styled confirmation message
+- Confirmation popup styling: use rounded border with blue/purple theme (`lipgloss.Color("62")`)
+- Set action context (e.g., "close" or "reopen") in `confirmAction` before showing popup
+- Set affected item ID in `confirmIssueIID` for display in confirmation message
+- Reset all confirmation state fields when closing popup (both confirm and cancel)
