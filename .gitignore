@@ -26,6 +26,10 @@ go.work
 *.swo
 *~
 
+#sample code for agent
+crush
+lazygit
+
 # OS
 .DS_Store
 Thumbs.db
