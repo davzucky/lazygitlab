@@ -67,6 +67,33 @@ func TestDashboardIssueStateTabReloads(t *testing.T) {
 	}
 }
 
+func TestDashboardIssueAllTabReloads(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.loading = false
+	m.issueState = IssueStateClosed
+	m.items = []ListItem{{ID: 11, Title: "Issue one"}}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	model := updated.(DashboardModel)
+	if model.issueState != IssueStateAll {
+		t.Fatalf("state = %v want %v", model.issueState, IssueStateAll)
+	}
+	if cmd == nil {
+		t.Fatal("expected reload command")
+	}
+
+	_ = cmd()
+	if len(provider.issueCalls) == 0 {
+		t.Fatal("expected issue load call")
+	}
+	if provider.issueCalls[0].State != IssueStateAll {
+		t.Fatalf("call state = %v want %v", provider.issueCalls[0].State, IssueStateAll)
+	}
+}
+
 func TestDashboardLoadsNextIssuePageNearEnd(t *testing.T) {
 	t.Parallel()
 
@@ -126,5 +153,16 @@ func TestDashboardIssueSearchAppliesOnEnter(t *testing.T) {
 	}
 	if provider.issueCalls[0].Search != "bug" {
 		t.Fatalf("call search = %q want %q", provider.issueCalls[0].Search, "bug")
+	}
+}
+
+func TestDashboardInitialRequestIDAcceptsFirstLoad(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	updated, _ := m.Update(loadedMsg{view: IssuesView, items: []ListItem{{ID: 99, Title: "Loaded"}}, requestID: 1, replace: true})
+	model := updated.(DashboardModel)
+	if len(model.items) == 0 {
+		t.Fatal("expected first load message to be accepted")
 	}
 }

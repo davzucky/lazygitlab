@@ -66,12 +66,12 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		spinner:     sp,
 		searchInput: search,
 		issueState:  IssueStateOpened,
+		requestSeq:  1,
+		requestID:   1,
 	}
 }
 
 func (m DashboardModel) Init() tea.Cmd {
-	m.requestSeq++
-	m.requestID = m.requestSeq
 	return tea.Batch(m.spinner.Tick, m.loadCurrentViewCmd(m.requestID, true, 1))
 }
 
@@ -125,7 +125,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "r":
 				m.errorMessage = ""
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			case "esc", "q":
 				m.errorMessage = ""
 				return m, nil
@@ -150,7 +150,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchInput.Blur()
 				m.issueSearch = strings.TrimSpace(m.searchInput.Value())
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			case "esc":
 				m.searchMode = false
 				m.searchInput.Blur()
@@ -167,7 +167,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected < len(m.items)-1 {
 				m.selected++
 				if m.shouldLoadMoreIssues() {
-					return m, m.startLoadMoreIssues()
+					return m.startLoadMoreIssues()
 				}
 			}
 		case "k", "up":
@@ -186,43 +186,43 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == IssuesView {
 				m.issueState = prevIssueState(m.issueState)
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "]":
 			if m.view == IssuesView {
 				m.issueState = nextIssueState(m.issueState)
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "o":
 			if m.view == IssuesView {
 				m.issueState = IssueStateOpened
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "c":
 			if m.view == IssuesView {
 				m.issueState = IssueStateClosed
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "a":
 			if m.view == IssuesView {
 				m.issueState = IssueStateAll
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "h", "left":
 			if m.view > IssuesView {
 				m.view--
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "l", "right":
 			if m.view < MergeRequestsView {
 				m.view++
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "tab":
 			if m.view < MergeRequestsView {
@@ -231,7 +231,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = IssuesView
 			}
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "shift+tab":
 			if m.view > IssuesView {
 				m.view--
@@ -239,15 +239,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = MergeRequestsView
 			}
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "1":
 			m.view = IssuesView
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "2":
 			m.view = MergeRequestsView
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "?":
 			m.showHelp = true
 		}
@@ -407,7 +407,7 @@ Actions:
 	return m.styles.helpPopup.Render(content)
 }
 
-func (m DashboardModel) startLoadCurrentView() tea.Cmd {
+func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.loadingMore = false
 	m.requestSeq++
@@ -415,18 +415,18 @@ func (m DashboardModel) startLoadCurrentView() tea.Cmd {
 	if m.view == IssuesView {
 		m.issuePage = 1
 	}
-	return m.loadCurrentViewCmd(m.requestID, true, m.issuePage)
+	return m, m.loadCurrentViewCmd(m.requestID, true, m.issuePage)
 }
 
-func (m DashboardModel) startLoadMoreIssues() tea.Cmd {
+func (m DashboardModel) startLoadMoreIssues() (tea.Model, tea.Cmd) {
 	if !m.shouldLoadMoreIssues() {
-		return nil
+		return m, nil
 	}
 	m.loadingMore = true
 	m.requestSeq++
 	m.requestID = m.requestSeq
 	nextPage := m.issuePage + 1
-	return m.loadCurrentViewCmd(m.requestID, false, nextPage)
+	return m, m.loadCurrentViewCmd(m.requestID, false, nextPage)
 }
 
 func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPage int) tea.Cmd {
