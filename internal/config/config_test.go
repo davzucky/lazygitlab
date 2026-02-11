@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,64 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Host != "https://env.gitlab.local/api/v4" {
 		t.Fatalf("Host = %q want https://env.gitlab.local/api/v4", cfg.Host)
+	}
+}
+
+func TestLoadInstancesIncludesAllSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	glabDir := filepath.Join(home, ".config", "glab-cli")
+	if err := os.MkdirAll(glabDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	glabConfig := strings.Join([]string{
+		"hosts:",
+		"  gitlab.com:",
+		"    token: glab-token",
+		"  gitlab.self:",
+		"    token: glab-self-token",
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(glabDir, "config.yml"), []byte(glabConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lazyDir := filepath.Join(home, ".config", "lazygitlab")
+	if err := os.MkdirAll(lazyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lazyConfig := "host: https://gitlab.custom/api/v4\ntoken: lazy-token\n"
+	if err := os.WriteFile(filepath.Join(lazyDir, "config.yml"), []byte(lazyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(EnvGitLabHost, "env.gitlab.local")
+	t.Setenv(EnvGitLabToken, "env-token")
+
+	instances, err := LoadInstances()
+	if err != nil {
+		t.Fatalf("LoadInstances() error = %v", err)
+	}
+
+	got := make(map[string]string, len(instances))
+	for _, instance := range instances {
+		got[instance.Host] = instance.Token
+	}
+
+	want := map[string]string{
+		"https://gitlab.com/api/v4":       "glab-token",
+		"https://gitlab.self/api/v4":      "glab-self-token",
+		"https://gitlab.custom/api/v4":    "lazy-token",
+		"https://env.gitlab.local/api/v4": "env-token",
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("instances size = %d want %d", len(got), len(want))
+	}
+
+	for host, token := range want {
+		if got[host] != token {
+			t.Fatalf("instance token for %q = %q want %q", host, got[host], token)
+		}
 	}
 }

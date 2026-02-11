@@ -25,6 +25,11 @@ type Config struct {
 	Debug       bool   `yaml:"debug,omitempty"`
 }
 
+type Instance struct {
+	Host  string
+	Token string
+}
+
 type glabConfig struct {
 	Hosts map[string]glabHostConfig `yaml:"hosts"`
 }
@@ -70,6 +75,52 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func LoadInstances() ([]Instance, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, errHomeNotFound
+	}
+
+	instancesByHost := make(map[string]Instance)
+	order := make([]string, 0)
+
+	addInstance := func(host string, token string) {
+		normalizedHost, err := NormalizeHost(host)
+		if err != nil {
+			return
+		}
+		cleanToken := strings.TrimSpace(token)
+		if cleanToken == "" {
+			return
+		}
+		if _, exists := instancesByHost[normalizedHost]; !exists {
+			order = append(order, normalizedHost)
+		}
+		instancesByHost[normalizedHost] = Instance{Host: normalizedHost, Token: cleanToken}
+	}
+
+	glabPath := filepath.Join(home, ".config", "glab-cli", "config.yml")
+	if hosts, err := loadAllFromGlab(glabPath); err == nil {
+		for _, hostCfg := range hosts {
+			addInstance(hostCfg.Host, hostCfg.Token)
+		}
+	}
+
+	lazyPath := filepath.Join(home, ".config", "lazygitlab", "config.yml")
+	if lazyCfg, err := loadFromLazyConfig(lazyPath); err == nil {
+		addInstance(lazyCfg.Host, lazyCfg.Token)
+	}
+
+	addInstance(os.Getenv(EnvGitLabHost), os.Getenv(EnvGitLabToken))
+
+	instances := make([]Instance, 0, len(order))
+	for _, host := range order {
+		instances = append(instances, instancesByHost[host])
+	}
+
+	return instances, nil
 }
 
 func Save(cfg Config) error {
@@ -136,25 +187,36 @@ func NormalizeHost(host string) (string, error) {
 }
 
 func loadFromGlab(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	hosts, err := loadAllFromGlab(path)
 	if err != nil {
 		return Config{}, err
 	}
 
+	for _, hostCfg := range hosts {
+		if strings.EqualFold(hostCfg.Host, "https://gitlab.com/api/v4") {
+			return hostCfg, nil
+		}
+	}
+
+	return hosts[0], nil
+}
+
+func loadAllFromGlab(path string) ([]Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
 	parsed := glabConfig{}
 	if err := yaml.Unmarshal(data, &parsed); err != nil {
-		return Config{}, err
+		return nil, err
 	}
 
 	if len(parsed.Hosts) == 0 {
-		return Config{}, errors.New("no hosts in glab config")
+		return nil, errors.New("no hosts in glab config")
 	}
 
-	if hostCfg, ok := parsed.Hosts["gitlab.com"]; ok {
-		if hostCfg.Token != "" {
-			return Config{Host: "https://gitlab.com/api/v4", Token: hostCfg.Token}, nil
-		}
-	}
+	hosts := make([]Config, 0, len(parsed.Hosts))
 
 	for host, hostCfg := range parsed.Hosts {
 		if strings.TrimSpace(hostCfg.Token) == "" {
@@ -166,10 +228,14 @@ func loadFromGlab(path string) (Config, error) {
 			continue
 		}
 
-		return Config{Host: normalizedHost, Token: strings.TrimSpace(hostCfg.Token)}, nil
+		hosts = append(hosts, Config{Host: normalizedHost, Token: strings.TrimSpace(hostCfg.Token)})
 	}
 
-	return Config{}, errors.New("no valid glab host entries")
+	if len(hosts) == 0 {
+		return nil, errors.New("no valid glab host entries")
+	}
+
+	return hosts, nil
 }
 
 func loadFromLazyConfig(path string) (Config, error) {

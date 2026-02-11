@@ -5,8 +5,7 @@ import "context"
 type ViewMode int
 
 const (
-	ProjectsView ViewMode = iota
-	IssuesView
+	IssuesView ViewMode = iota
 	MergeRequestsView
 )
 
@@ -18,7 +17,6 @@ type ListItem struct {
 }
 
 type DataProvider interface {
-	LoadProjects(ctx context.Context) ([]ListItem, error)
 	LoadIssues(ctx context.Context) ([]ListItem, error)
 	LoadMergeRequests(ctx context.Context) ([]ListItem, error)
 }

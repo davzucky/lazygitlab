@@ -19,6 +19,37 @@ type pickerModel struct {
 	cancelled bool
 }
 
+type InstanceOption struct {
+	Host  string
+	Label string
+}
+
+type instancePickerModel struct {
+	instances []InstanceOption
+	selected  int
+	chosen    InstanceOption
+	cancelled bool
+}
+
+func RunInstancePicker(instances []InstanceOption) (InstanceOption, error) {
+	m := newInstancePickerModel(instances)
+	p := tea.NewProgram(m)
+	out, err := p.Run()
+	if err != nil {
+		return InstanceOption{}, err
+	}
+
+	final := out.(instancePickerModel)
+	if final.cancelled {
+		return InstanceOption{}, ErrCancelled
+	}
+	if final.chosen.Host == "" {
+		return InstanceOption{}, fmt.Errorf("no instance selected")
+	}
+
+	return final.chosen, nil
+}
+
 func RunProjectPicker(projects []*gl.Project) (string, error) {
 	m := newPickerModel(projects)
 	p := tea.NewProgram(m)
@@ -70,12 +101,12 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc", "q":
 			m.cancelled = true
 			return m, tea.Quit
-		case "down", "j":
+		case "down", "j", "tab":
 			if m.selected < len(m.filtered)-1 {
 				m.selected++
 			}
 			return m, nil
-		case "up", "k":
+		case "up", "k", "shift+tab":
 			if m.selected > 0 {
 				m.selected--
 			}
@@ -94,6 +125,88 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.applyFilter()
 
 	return m, cmd
+}
+
+func newInstancePickerModel(instances []InstanceOption) instancePickerModel {
+	copyInstances := make([]InstanceOption, 0, len(instances))
+	for _, instance := range instances {
+		if strings.TrimSpace(instance.Host) == "" {
+			continue
+		}
+		copyInstances = append(copyInstances, instance)
+	}
+
+	return instancePickerModel{instances: copyInstances}
+}
+
+func (m instancePickerModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m instancePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc", "q":
+			m.cancelled = true
+			return m, tea.Quit
+		case "down", "j", "tab":
+			if m.selected < len(m.instances)-1 {
+				m.selected++
+			}
+			return m, nil
+		case "up", "k", "shift+tab":
+			if m.selected > 0 {
+				m.selected--
+			}
+			return m, nil
+		case "enter":
+			if len(m.instances) == 0 {
+				return m, nil
+			}
+			m.chosen = m.instances[m.selected]
+			return m, tea.Quit
+		}
+	}
+
+	return m, nil
+}
+
+func (m instancePickerModel) View() string {
+	rows := []string{
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("Select a GitLab instance"),
+		"",
+	}
+
+	if len(m.instances) == 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("No configured instances found"))
+	} else {
+		for i, instance := range m.instances {
+			prefix := "  "
+			style := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+			if i == m.selected {
+				prefix = "› "
+				style = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+			}
+
+			label := instance.Label
+			if strings.TrimSpace(label) == "" {
+				label = instance.Host
+			}
+
+			rows = append(rows, style.Render(prefix+label))
+		}
+	}
+
+	rows = append(rows, "", "Enter to select, j/k or arrows to move, Tab/Shift+Tab to cycle, q or Esc to cancel")
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 2).
+		Width(80)
+
+	return box.Render(strings.Join(rows, "\n"))
 }
 
 func (m *pickerModel) applyFilter() {
@@ -143,7 +256,7 @@ func (m pickerModel) View() string {
 		}
 	}
 
-	rows = append(rows, "", "Enter to select, j/k to move, q or Esc to cancel")
+	rows = append(rows, "", "Enter to select, j/k or arrows to move, Tab/Shift+Tab to cycle, q or Esc to cancel")
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
