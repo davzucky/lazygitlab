@@ -14,7 +14,7 @@ setup wizard, and a multi-panel Bubble Tea interface.
 ## Quick start
 
 ```bash
-make run
+just run
 ```
 
 On first run, LazyGitLab opens an interactive setup wizard to collect your host
@@ -45,7 +45,7 @@ and token, then saves config to `~/.config/lazygitlab/config.yml`.
 Use `agent-tui` to validate panel stability and navigation after TUI changes:
 
 ```bash
-make tui-validate
+just tui-validate
 ```
 
 This runs a scripted flow (`j`, `Tab`, `Shift+Tab`, `?`, `Esc`) and fails if
@@ -54,7 +54,7 @@ the sidebar/main separator drifts during updates.
 For CI-safe mode (no external GitLab dependency), set mock mode:
 
 ```bash
-TUI_VALIDATE_MOCK=1 make tui-validate
+TUI_VALIDATE_MOCK=1 just tui-validate
 ```
 
 ## Contributor workflow
@@ -62,26 +62,29 @@ TUI_VALIDATE_MOCK=1 make tui-validate
 Install local git hooks:
 
 ```bash
-make hooks
+just hooks
 ```
 
 Run local quality checks before pushing:
 
 ```bash
-make pre-commit
+just pre-commit
 ```
 
 Validate conventional commits for recent history:
 
 ```bash
-make commit-check
+just commit-check
 ```
 
 Full CI-equivalent run:
 
 ```bash
-TUI_VALIDATE_MOCK=1 make ci
+TUI_VALIDATE_MOCK=1 just ci
 ```
+
+`make` targets are still available as temporary wrappers around `just` recipes
+during the migration.
 
 ## Project layout
 

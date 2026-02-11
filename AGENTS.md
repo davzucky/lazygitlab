@@ -26,19 +26,19 @@ Repository guidance for coding agents working on LazyGitLab.
 
 ## Build, test, lint
 
-- Build: `make build`
-- Run: `make run`
-- Test: `make test`
-- Lint: `make lint`
-- Format: `make fmt`
-- Local quality gate: `make pre-commit`
-- TUI regression (mock mode): `TUI_VALIDATE_MOCK=1 make tui-validate`
+- Build: `just build`
+- Run: `just run`
+- Test: `just test`
+- Lint: `just lint`
+- Format: `just fmt`
+- Local quality gate: `just pre-commit`
+- TUI regression (mock mode): `TUI_VALIDATE_MOCK=1 just tui-validate`
 
 ## Automation and commit policy
 
 - CI is defined in `.github/workflows/ci.yml` and must pass before merge.
 - Conventional commits are required and validated in CI and local hooks.
-- Install local hooks with `make hooks`.
+- Install local hooks with `just hooks`.
 
 ## Layout rules (strict internal-first)
 

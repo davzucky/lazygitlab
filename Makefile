@@ -1,35 +1,36 @@
-APP := lazygitlab
-
 .PHONY: build run test lint fmt tidy tui-validate pre-commit hooks commit-check ci
 
+# Deprecated: prefer running recipes from justfile (`just <recipe>`).
+# Keep Make targets as temporary compatibility wrappers.
 build:
-	go build -o $(APP) ./cmd/lazygitlab
+	just build
 
 run:
-	go run ./cmd/lazygitlab
+	just run
 
 test:
-	go test ./...
+	just test
 
 lint:
-	go vet ./...
+	just lint
 
 fmt:
-	gofmt -w ./cmd ./internal
+	just fmt
 
 tidy:
-	go mod tidy
+	just tidy
 
 tui-validate:
-	./scripts/validate-tui-drift.sh
+	just tui-validate
 
 pre-commit:
-	./scripts/pre-commit-check.sh
+	just pre-commit
 
 hooks:
-	./scripts/install-githooks.sh
+	just hooks
 
 commit-check:
-	./scripts/check-conventional-commits.sh
+	just commit-check
 
-ci: lint test build tui-validate
+ci:
+	just ci

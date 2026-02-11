@@ -55,22 +55,25 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup just
+        uses: taiki-e/install-action@just
+
       - name: Install agent-tui locally
         run: ./scripts/install-agent-tui-local.sh
 
       - name: Check formatting
         run: |
-          make fmt
+          just fmt
           git diff --exit-code
 
       - name: Lint
-        run: make lint
+        run: just lint
 
       - name: Test
-        run: make test
+        run: just test
 
       - name: Build
-        run: make build
+        run: just build
 
       - name: TUI drift validation
         env:
@@ -80,4 +83,4 @@ jobs:
           mkdir -p "${{ github.workspace }}/.local-bin"
           cp "$HOME/.local/bin/agent-tui" "${{ github.workspace }}/.local-bin/agent-tui"
           chmod +x "${{ github.workspace }}/.local-bin/agent-tui"
-          make tui-validate
+          just tui-validate
