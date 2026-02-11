@@ -68,11 +68,9 @@ baseline = os.environ.get("BASELINE_SEP", "")
 
 if "Navigation" not in screen:
     raise SystemExit("missing sidebar title")
-if "1. Projects" not in screen:
-    raise SystemExit("missing projects menu")
-if "2. Issues" not in screen:
+if "1. Issues" not in screen:
     raise SystemExit("missing issues menu")
-if "3. Merge Requests" not in screen:
+if "2. Merge Requests" not in screen:
     raise SystemExit("missing merge requests menu")
 
 lines = [line for line in screen.splitlines() if "││" in line]
