@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/davzucky/lazygitlab/internal/tui"
 )
@@ -20,18 +21,56 @@ func (p *MockProvider) LoadProjects(context.Context) ([]tui.ListItem, error) {
 	}, nil
 }
 
-func (p *MockProvider) LoadIssues(context.Context) ([]tui.ListItem, error) {
-	items := make([]tui.ListItem, 0, 40)
-	for i := 40; i >= 1; i-- {
-		items = append(items, tui.ListItem{
+func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.IssueResult, error) {
+	state := query.State
+	if state == "" {
+		state = tui.IssueStateOpened
+	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PerPage <= 0 {
+		query.PerPage = 25
+	}
+
+	filtered := make([]tui.ListItem, 0, 120)
+	needle := strings.ToLower(strings.TrimSpace(query.Search))
+
+	for i := 120; i >= 1; i-- {
+		issueState := "opened"
+		if i%3 == 0 {
+			issueState = "closed"
+		}
+		if state == tui.IssueStateOpened && issueState != "opened" {
+			continue
+		}
+		if state == tui.IssueStateClosed && issueState != "closed" {
+			continue
+		}
+
+		title := fmt.Sprintf("Mock issue %03d with long title to validate clipping and stable panel width behavior", i)
+		if needle != "" && !strings.Contains(strings.ToLower(title), needle) {
+			continue
+		}
+
+		filtered = append(filtered, tui.ListItem{
 			ID:       int64(2000 + i),
-			Title:    fmt.Sprintf("Mock issue %02d with long title to validate clipping and stable panel width behavior", i),
-			Subtitle: fmt.Sprintf("#%d • opened", 3000+i),
+			Title:    title,
+			Subtitle: fmt.Sprintf("#%d • %s", 3000+i, issueState),
 			URL:      fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
 		})
 	}
 
-	return items, nil
+	start := (query.Page - 1) * query.PerPage
+	if start >= len(filtered) {
+		return tui.IssueResult{Items: []tui.ListItem{}, HasNextPage: false}, nil
+	}
+	end := start + query.PerPage
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	return tui.IssueResult{Items: filtered[start:end], HasNextPage: end < len(filtered)}, nil
 }
 
 func (p *MockProvider) LoadMergeRequests(context.Context) ([]tui.ListItem, error) {

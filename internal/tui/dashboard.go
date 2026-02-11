@@ -6,14 +6,18 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 type loadedMsg struct {
-	view  ViewMode
-	items []ListItem
-	err   error
+	view        ViewMode
+	items       []ListItem
+	err         error
+	requestID   int
+	replace     bool
+	hasNextPage bool
 }
 
 type DashboardModel struct {
@@ -29,6 +33,15 @@ type DashboardModel struct {
 	errorMessage string
 	showHelp     bool
 	spinner      spinner.Model
+	searchInput  textinput.Model
+	searchMode   bool
+	issueState   IssueState
+	issueSearch  string
+	issuePage    int
+	issueHasNext bool
+	loadingMore  bool
+	requestSeq   int
+	requestID    int
 }
 
 func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardModel {
@@ -36,20 +49,30 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
 
+	search := textinput.New()
+	search.Prompt = "Search: "
+	search.Placeholder = "type and press Enter"
+	search.CharLimit = 120
+	search.Width = 30
+
 	return DashboardModel{
-		provider: provider,
-		ctx:      ctx,
-		styles:   newStyles(),
-		view:     IssuesView,
-		width:    100,
-		height:   40,
-		loading:  true,
-		spinner:  sp,
+		provider:    provider,
+		ctx:         ctx,
+		styles:      newStyles(),
+		view:        IssuesView,
+		width:       100,
+		height:      40,
+		loading:     true,
+		spinner:     sp,
+		searchInput: search,
+		issueState:  IssueStateOpened,
+		requestSeq:  1,
+		requestID:   1,
 	}
 }
 
 func (m DashboardModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.loadCurrentViewCmd())
+	return tea.Batch(m.spinner.Tick, m.loadCurrentViewCmd(m.requestID, true, 1))
 }
 
 func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,18 +88,33 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case loadedMsg:
-		if msg.view != m.view {
+		if msg.view != m.view || msg.requestID != m.requestID {
 			return m, nil
 		}
 		m.loading = false
+		m.loadingMore = false
 		if msg.err != nil {
 			m.errorMessage = msg.err.Error()
-			m.items = nil
-			m.selected = 0
+			if msg.replace {
+				m.items = nil
+				m.selected = 0
+			}
 			return m, nil
 		}
 		m.errorMessage = ""
-		m.items = msg.items
+		if msg.replace {
+			m.items = msg.items
+		} else {
+			m.items = append(m.items, msg.items...)
+		}
+		if m.view == IssuesView {
+			m.issueHasNext = msg.hasNextPage
+			if msg.replace {
+				m.issuePage = 1
+			} else {
+				m.issuePage++
+			}
+		}
 		if m.selected >= len(m.items) {
 			m.selected = 0
 		}
@@ -87,7 +125,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "r":
 				m.errorMessage = ""
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			case "esc", "q":
 				m.errorMessage = ""
 				return m, nil
@@ -103,28 +141,88 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.searchMode {
+			var cmd tea.Cmd
+			m.searchInput, cmd = m.searchInput.Update(msg)
+			switch msg.String() {
+			case "enter":
+				m.searchMode = false
+				m.searchInput.Blur()
+				m.issueSearch = strings.TrimSpace(m.searchInput.Value())
+				m.selected = 0
+				return m.startLoadCurrentView()
+			case "esc":
+				m.searchMode = false
+				m.searchInput.Blur()
+				m.searchInput.SetValue(m.issueSearch)
+				return m, nil
+			}
+			return m, cmd
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
 				m.selected++
+				if m.shouldLoadMoreIssues() {
+					return m.startLoadMoreIssues()
+				}
 			}
 		case "k", "up":
 			if m.selected > 0 {
 				m.selected--
 			}
+		case "/":
+			if m.view == IssuesView {
+				m.searchMode = true
+				m.searchInput.Focus()
+				m.searchInput.SetValue(m.issueSearch)
+				m.searchInput.CursorEnd()
+				return m, nil
+			}
+		case "[":
+			if m.view == IssuesView {
+				m.issueState = prevIssueState(m.issueState)
+				m.selected = 0
+				return m.startLoadCurrentView()
+			}
+		case "]":
+			if m.view == IssuesView {
+				m.issueState = nextIssueState(m.issueState)
+				m.selected = 0
+				return m.startLoadCurrentView()
+			}
+		case "o":
+			if m.view == IssuesView {
+				m.issueState = IssueStateOpened
+				m.selected = 0
+				return m.startLoadCurrentView()
+			}
+		case "c":
+			if m.view == IssuesView {
+				m.issueState = IssueStateClosed
+				m.selected = 0
+				return m.startLoadCurrentView()
+			}
+		case "a":
+			if m.view == IssuesView {
+				m.issueState = IssueStateAll
+				m.selected = 0
+				return m.startLoadCurrentView()
+			}
 		case "h", "left":
 			if m.view > IssuesView {
 				m.view--
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "l", "right":
 			if m.view < MergeRequestsView {
 				m.view++
 				m.selected = 0
-				return m, m.startLoadCurrentView()
+				return m.startLoadCurrentView()
 			}
 		case "tab":
 			if m.view < MergeRequestsView {
@@ -133,7 +231,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = IssuesView
 			}
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "shift+tab":
 			if m.view > IssuesView {
 				m.view--
@@ -141,15 +239,15 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.view = MergeRequestsView
 			}
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "1":
 			m.view = IssuesView
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "2":
 			m.view = MergeRequestsView
 			m.selected = 0
-			return m, m.startLoadCurrentView()
+			return m.startLoadCurrentView()
 		case "?":
 			m.showHelp = true
 		}
@@ -207,8 +305,18 @@ func (m DashboardModel) navLabel(view ViewMode, label string) string {
 func (m DashboardModel) renderMain(width int, height int) string {
 	header := m.styles.header.Render(m.viewTitle())
 
-	lines := []string{header, ""}
-	bodyRows := max(1, height-4)
+	lines := []string{header}
+	if m.view == IssuesView {
+		lines = append(lines,
+			" "+m.renderIssueTabs(max(20, width-6)),
+			" "+m.renderIssueSearch(max(20, width-6)),
+			m.styles.dim.Render(" sort: updated newest first"),
+			"",
+		)
+	} else {
+		lines = append(lines, "")
+	}
+	bodyRows := max(1, height-len(lines)-2)
 	if m.loading {
 		lines = append(lines, "  "+m.spinner.View()+" Loading...")
 	} else if len(m.items) == 0 {
@@ -231,6 +339,9 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		if len(m.items) > bodyRows {
 			footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
 			lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
+		}
+		if m.view == IssuesView && m.loadingMore {
+			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
 		}
 	}
 
@@ -265,6 +376,14 @@ func (m DashboardModel) renderStatusBar(width int) string {
 	status := fmt.Sprintf("Project: %s | Host: %s | %s", m.ctx.ProjectPath, m.ctx.Host, m.ctx.Connection)
 	if m.loading {
 		status += " | loading"
+	} else if m.view == IssuesView {
+		status += fmt.Sprintf(" | issues: %s", issueStateLabel(m.issueState))
+		if strings.TrimSpace(m.issueSearch) != "" {
+			status += fmt.Sprintf(" | search=%q", m.issueSearch)
+		}
+		if m.loadingMore {
+			status += " | loading more"
+		}
 	}
 	return m.styles.status.Width(width).Render(fitLine(status, max(10, width-2)))
 }
@@ -279,6 +398,8 @@ Navigation:
 
 Actions:
   1,2                 Jump to view
+  [,] or o/c/a        Issue state tabs
+  /                   Search issues
   r                   Retry after error
   q                   Quit
   ?                   Toggle help
@@ -286,29 +407,57 @@ Actions:
 	return m.styles.helpPopup.Render(content)
 }
 
-func (m DashboardModel) startLoadCurrentView() tea.Cmd {
+func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.loading = true
-	return m.loadCurrentViewCmd()
+	m.loadingMore = false
+	m.requestSeq++
+	m.requestID = m.requestSeq
+	if m.view == IssuesView {
+		m.issuePage = 1
+	}
+	return m, m.loadCurrentViewCmd(m.requestID, true, m.issuePage)
 }
 
-func (m DashboardModel) loadCurrentViewCmd() tea.Cmd {
+func (m DashboardModel) startLoadMoreIssues() (tea.Model, tea.Cmd) {
+	if !m.shouldLoadMoreIssues() {
+		return m, nil
+	}
+	m.loadingMore = true
+	m.requestSeq++
+	m.requestID = m.requestSeq
+	nextPage := m.issuePage + 1
+	return m, m.loadCurrentViewCmd(m.requestID, false, nextPage)
+}
+
+func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPage int) tea.Cmd {
 	view := m.view
 	provider := m.provider
+	issueState := m.issueState
+	issueSearch := m.issueSearch
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			items []ListItem
-			err   error
+			items       []ListItem
+			err         error
+			hasNextPage bool
 		)
 
 		switch view {
 		case IssuesView:
-			items, err = provider.LoadIssues(ctx)
+			result, issueErr := provider.LoadIssues(ctx, IssueQuery{
+				State:   issueState,
+				Search:  issueSearch,
+				Page:    issuesPage,
+				PerPage: 25,
+			})
+			err = issueErr
+			items = result.Items
+			hasNextPage = result.HasNextPage
 		case MergeRequestsView:
 			items, err = provider.LoadMergeRequests(ctx)
 		}
 
-		return loadedMsg{view: view, items: items, err: err}
+		return loadedMsg{view: view, items: items, err: err, requestID: requestID, replace: replace, hasNextPage: hasNextPage}
 	}
 }
 
@@ -320,6 +469,73 @@ func (m DashboardModel) viewTitle() string {
 		return "Merge Requests"
 	default:
 		return "Unknown"
+	}
+}
+
+func (m DashboardModel) shouldLoadMoreIssues() bool {
+	if m.view != IssuesView || m.loading || m.loadingMore || !m.issueHasNext {
+		return false
+	}
+	if len(m.items) == 0 {
+		return false
+	}
+	return m.selected >= len(m.items)-2
+}
+
+func (m DashboardModel) renderIssueTabs(width int) string {
+	tabs := []IssueState{IssueStateOpened, IssueStateClosed, IssueStateAll}
+	parts := make([]string, 0, len(tabs))
+	for _, tab := range tabs {
+		label := issueStateLabel(tab)
+		if tab == m.issueState {
+			parts = append(parts, m.styles.selectedRow.Render("["+label+"]"))
+			continue
+		}
+		parts = append(parts, m.styles.dim.Render(label))
+	}
+	return fitLine(strings.Join(parts, "  "), width)
+}
+
+func (m DashboardModel) renderIssueSearch(width int) string {
+	if m.searchMode {
+		return fitLine(m.searchInput.View(), width)
+	}
+	if strings.TrimSpace(m.issueSearch) == "" {
+		return fitLine("Search: (press /)", width)
+	}
+	return fitLine(fmt.Sprintf("Search: %s (press / to edit)", m.issueSearch), width)
+}
+
+func issueStateLabel(state IssueState) string {
+	switch state {
+	case IssueStateClosed:
+		return "Closed"
+	case IssueStateAll:
+		return "All"
+	default:
+		return "Open"
+	}
+}
+
+func nextIssueState(current IssueState) IssueState {
+	switch current {
+	case IssueStateOpened:
+		return IssueStateClosed
+	case IssueStateClosed:
+		return IssueStateAll
+	default:
+		return IssueStateOpened
+	}
+}
+
+func prevIssueState(current IssueState) IssueState {
+	switch current {
+	case IssueStateOpened:
+		return IssueStateAll
+	case IssueStateClosed:
+		return IssueStateOpened
+	default:
+		return IssueStateClosed
 	}
 }
 

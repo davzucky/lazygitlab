@@ -20,8 +20,15 @@ type Client interface {
 	GetCurrentUser(ctx context.Context) (*gl.User, error)
 	GetProject(ctx context.Context, projectPath string) (*gl.Project, error)
 	ListProjects(ctx context.Context, search string) ([]*gl.Project, error)
-	ListIssues(ctx context.Context, projectPath string, state string) ([]*gl.Issue, error)
+	ListIssues(ctx context.Context, projectPath string, opts IssueListOptions) ([]*gl.Issue, bool, error)
 	ListMergeRequests(ctx context.Context, projectPath string, state string) ([]*gl.BasicMergeRequest, error)
+}
+
+type IssueListOptions struct {
+	State   string
+	Search  string
+	Page    int64
+	PerPage int
 }
 
 type client struct {
@@ -113,37 +120,39 @@ func (c *client) ListProjects(ctx context.Context, search string) ([]*gl.Project
 	return all, nil
 }
 
-func (c *client) ListIssues(ctx context.Context, projectPath string, state string) ([]*gl.Issue, error) {
-	all := make([]*gl.Issue, 0, defaultPerPage)
-	page := int64(1)
-
-	for {
-		opts := &gl.ListProjectIssuesOptions{
-			ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage},
-		}
-		if state != "" {
-			opts.State = gl.Ptr(state)
-		}
-
-		var issues []*gl.Issue
-		var resp *gl.Response
-		err := c.withRetry(ctx, "ListIssues", func() (*gl.Response, error) {
-			var err error
-			issues, resp, err = c.api.Issues.ListProjectIssues(projectPath, opts, gl.WithContext(ctx))
-			return resp, err
-		})
-		if err != nil {
-			return nil, fmt.Errorf("list issues for project %q: %w", projectPath, err)
-		}
-
-		all = append(all, issues...)
-		if resp == nil || resp.NextPage == 0 {
-			break
-		}
-		page = resp.NextPage
+func (c *client) ListIssues(ctx context.Context, projectPath string, opts IssueListOptions) ([]*gl.Issue, bool, error) {
+	if opts.Page <= 0 {
+		opts.Page = 1
+	}
+	if opts.PerPage <= 0 {
+		opts.PerPage = defaultPerPage
 	}
 
-	return all, nil
+	apiOpts := &gl.ListProjectIssuesOptions{
+		ListOptions: gl.ListOptions{Page: opts.Page, PerPage: int64(opts.PerPage)},
+		OrderBy:     gl.Ptr("updated_at"),
+		Sort:        gl.Ptr("desc"),
+	}
+	if opts.State != "" {
+		apiOpts.State = gl.Ptr(opts.State)
+	}
+	if opts.Search != "" {
+		apiOpts.Search = gl.Ptr(opts.Search)
+	}
+
+	var issues []*gl.Issue
+	var resp *gl.Response
+	err := c.withRetry(ctx, "ListIssues", func() (*gl.Response, error) {
+		var err error
+		issues, resp, err = c.api.Issues.ListProjectIssues(projectPath, apiOpts, gl.WithContext(ctx))
+		return resp, err
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list issues for project %q: %w", projectPath, err)
+	}
+
+	hasNextPage := resp != nil && resp.NextPage > 0
+	return issues, hasNextPage, nil
 }
 
 func (c *client) ListMergeRequests(ctx context.Context, projectPath string, state string) ([]*gl.BasicMergeRequest, error) {

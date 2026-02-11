@@ -36,14 +36,19 @@ func (p *Provider) LoadProjects(ctx context.Context) ([]tui.ListItem, error) {
 	return items, nil
 }
 
-func (p *Provider) LoadIssues(ctx context.Context) ([]tui.ListItem, error) {
+func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.IssueResult, error) {
 	if p.projectPath == "" {
-		return nil, fmt.Errorf("no project context selected")
+		return tui.IssueResult{}, fmt.Errorf("no project context selected")
 	}
 
-	issues, err := p.client.ListIssues(ctx, p.projectPath, "opened")
+	issues, hasNextPage, err := p.client.ListIssues(ctx, p.projectPath, gitlab.IssueListOptions{
+		State:   string(query.State),
+		Search:  query.Search,
+		Page:    int64(query.Page),
+		PerPage: query.PerPage,
+	})
 	if err != nil {
-		return nil, err
+		return tui.IssueResult{}, err
 	}
 
 	items := make([]tui.ListItem, 0, len(issues))
@@ -57,7 +62,7 @@ func (p *Provider) LoadIssues(ctx context.Context) ([]tui.ListItem, error) {
 		})
 	}
 
-	return items, nil
+	return tui.IssueResult{Items: items, HasNextPage: hasNextPage}, nil
 }
 
 func (p *Provider) LoadMergeRequests(ctx context.Context) ([]tui.ListItem, error) {
