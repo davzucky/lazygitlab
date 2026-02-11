@@ -34,8 +34,8 @@ Use this skill when creating or refactoring Go application repositories.
 
 ## Validation before completion
 
-- [ ] `make fmt`
-- [ ] `make test`
-- [ ] `make build`
+- [ ] `just fmt`
+- [ ] `just test`
+- [ ] `just build`
 - [ ] No new `pkg` package added unless justified.
 - [ ] `cmd/lazygitlab/main.go` only handles flags + app startup.

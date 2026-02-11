@@ -2,7 +2,7 @@
 set -eu
 
 printf '%s\n' "Running formatting checks..."
-make fmt
+just fmt
 
 if ! git diff --quiet -- cmd internal; then
   printf '%s\n' "go formatting changed files. Please review and re-stage changes." >&2
@@ -10,9 +10,9 @@ if ! git diff --quiet -- cmd internal; then
 fi
 
 printf '%s\n' "Running lint checks..."
-make lint
+just lint
 
 printf '%s\n' "Running tests..."
-make test
+just test
 
 printf '%s\n' "Pre-commit checks passed."
