@@ -62,9 +62,7 @@ jobs:
         run: ./scripts/install-agent-tui-local.sh
 
       - name: Check formatting
-        run: |
-          just fmt
-          git diff --exit-code
+        run: just fmt-check
 
       - name: Lint
         run: just lint

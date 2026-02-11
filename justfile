@@ -18,6 +18,9 @@ lint:
 fmt:
     gofmt -w ./cmd ./internal
 
+fmt-check: fmt
+    git diff --exit-code
+
 tidy:
     go mod tidy
 
@@ -33,4 +36,4 @@ hooks:
 commit-check:
     ./scripts/check-conventional-commits.sh
 
-ci: lint test build tui-validate
+ci: fmt-check lint test build tui-validate
