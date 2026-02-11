@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -67,19 +68,6 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	client, err := gitlab.NewClient(cfg.Token, cfg.Host, logger)
-	if err != nil {
-		return err
-	}
-
-	authCtx, cancelAuth := context.WithTimeout(ctx, 12*time.Second)
-	defer cancelAuth()
-
-	user, err := client.GetCurrentUser(authCtx)
-	if err != nil {
-		return fmt.Errorf("validate token: %w", err)
-	}
-
 	projectPath := strings.TrimSpace(opts.ProjectOverride)
 	if projectPath == "" {
 		projectPath, err = project.DetectCurrentProject(cfg.Host)
@@ -93,6 +81,65 @@ func Run(ctx context.Context, opts Options) error {
 		if projectPath != "" {
 			logger.Printf("using last known project: %s", projectPath)
 		}
+	}
+
+	selected := config.Instance{Host: cfg.Host, Token: cfg.Token}
+	if projectPath == "" {
+		instances, err := config.LoadInstances()
+		if err != nil {
+			return fmt.Errorf("load configured instances: %w", err)
+		}
+
+		if len(instances) == 0 {
+			instances = append(instances, selected)
+		}
+
+		if len(instances) > 1 {
+			options := make([]tui.InstanceOption, 0, len(instances))
+			for _, instance := range instances {
+				options = append(options, tui.InstanceOption{
+					Host:  instance.Host,
+					Label: formatInstanceLabel(instance.Host),
+				})
+			}
+
+			chosen, pickErr := tui.RunInstancePicker(options)
+			if pickErr != nil {
+				if errors.Is(pickErr, tui.ErrCancelled) {
+					return errors.New("no instance selected")
+				}
+				return fmt.Errorf("instance picker failed: %w", pickErr)
+			}
+
+			for _, instance := range instances {
+				if strings.EqualFold(instance.Host, chosen.Host) {
+					selected = instance
+					break
+				}
+			}
+		} else {
+			selected = instances[0]
+		}
+	}
+
+	if strings.TrimSpace(selected.Host) == "" || strings.TrimSpace(selected.Token) == "" {
+		return errors.New("no usable GitLab instance configuration found")
+	}
+
+	cfg.Host = selected.Host
+	cfg.Token = selected.Token
+
+	client, err := gitlab.NewClient(cfg.Token, cfg.Host, logger)
+	if err != nil {
+		return err
+	}
+
+	authCtx, cancelAuth := context.WithTimeout(ctx, 12*time.Second)
+	defer cancelAuth()
+
+	user, err := client.GetCurrentUser(authCtx)
+	if err != nil {
+		return fmt.Errorf("validate token: %w", err)
 	}
 
 	if projectPath == "" {
@@ -131,4 +178,26 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	return nil
+}
+
+func formatInstanceLabel(host string) string {
+	normalized := strings.TrimSpace(host)
+	if normalized == "" {
+		return host
+	}
+
+	u, err := url.Parse(normalized)
+	if err != nil {
+		return normalized
+	}
+
+	if u.Host == "" {
+		return normalized
+	}
+
+	if strings.TrimSpace(u.Path) == "" {
+		return u.Host
+	}
+
+	return fmt.Sprintf("%s (%s)", u.Host, strings.TrimSuffix(u.Path, "/"))
 }

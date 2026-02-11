@@ -115,7 +115,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected--
 			}
 		case "h", "left":
-			if m.view > ProjectsView {
+			if m.view > IssuesView {
 				m.view--
 				m.selected = 0
 				return m, m.startLoadCurrentView()
@@ -130,12 +130,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view < MergeRequestsView {
 				m.view++
 			} else {
-				m.view = ProjectsView
+				m.view = IssuesView
 			}
 			m.selected = 0
 			return m, m.startLoadCurrentView()
 		case "shift+tab":
-			if m.view > ProjectsView {
+			if m.view > IssuesView {
 				m.view--
 			} else {
 				m.view = MergeRequestsView
@@ -143,14 +143,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = 0
 			return m, m.startLoadCurrentView()
 		case "1":
-			m.view = ProjectsView
-			m.selected = 0
-			return m, m.startLoadCurrentView()
-		case "2":
 			m.view = IssuesView
 			m.selected = 0
 			return m, m.startLoadCurrentView()
-		case "3":
+		case "2":
 			m.view = MergeRequestsView
 			m.selected = 0
 			return m, m.startLoadCurrentView()
@@ -190,9 +186,8 @@ func (m DashboardModel) renderSidebar(width int, height int) string {
 	items := []string{
 		m.styles.title.Render("Navigation"),
 		"",
-		m.navLabel(ProjectsView, fitLine("1. Projects", width-6)),
-		m.navLabel(IssuesView, fitLine("2. Issues", width-6)),
-		m.navLabel(MergeRequestsView, fitLine("3. Merge Requests", width-6)),
+		m.navLabel(IssuesView, fitLine("1. Issues", width-6)),
+		m.navLabel(MergeRequestsView, fitLine("2. Merge Requests", width-6)),
 		"",
 		m.styles.dim.Render("j/k or arrows to move"),
 		m.styles.dim.Render("h/l tab to switch"),
@@ -283,7 +278,7 @@ Navigation:
   tab/shift+tab       Cycle views
 
 Actions:
-  1,2,3               Jump to view
+  1,2                 Jump to view
   r                   Retry after error
   q                   Quit
   ?                   Toggle help
@@ -307,8 +302,6 @@ func (m DashboardModel) loadCurrentViewCmd() tea.Cmd {
 		)
 
 		switch view {
-		case ProjectsView:
-			items, err = provider.LoadProjects(ctx)
 		case IssuesView:
 			items, err = provider.LoadIssues(ctx)
 		case MergeRequestsView:
@@ -321,8 +314,6 @@ func (m DashboardModel) loadCurrentViewCmd() tea.Cmd {
 
 func (m DashboardModel) viewTitle() string {
 	switch m.view {
-	case ProjectsView:
-		return "Projects"
 	case IssuesView:
 		return "Issues"
 	case MergeRequestsView:

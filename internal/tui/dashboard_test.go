@@ -9,10 +9,6 @@ import (
 
 type stubProvider struct{}
 
-func (s stubProvider) LoadProjects(context.Context) ([]ListItem, error) {
-	return []ListItem{{ID: 1, Title: "project/a"}}, nil
-}
-
 func (s stubProvider) LoadIssues(context.Context) ([]ListItem, error) {
 	return []ListItem{{ID: 11, Title: "Issue one"}}, nil
 }
@@ -28,7 +24,7 @@ func TestDashboardViewSwitches(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
 	model := updated.(DashboardModel)
 
-	if model.view != ProjectsView {
-		t.Fatalf("view = %v want %v", model.view, ProjectsView)
+	if model.view != IssuesView {
+		t.Fatalf("view = %v want %v", model.view, IssuesView)
 	}
 }
