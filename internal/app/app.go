@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -22,6 +23,21 @@ type Options struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
+	if os.Getenv("LAZYGITLAB_MOCK_DATA") == "1" {
+		provider := NewMockProvider()
+		model := tui.NewDashboardModel(provider, tui.DashboardContext{
+			ProjectPath: "mock/group/project",
+			Connection:  "Connected as mock-user",
+			Host:        "https://mock.gitlab.local/api/v4",
+		})
+
+		program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+		if _, err := program.Run(); err != nil {
+			return fmt.Errorf("run mock TUI: %w", err)
+		}
+		return nil
+	}
+
 	logger, closeLogger, err := logging.New(opts.Debug)
 	if err != nil {
 		return fmt.Errorf("initialize logger: %w", err)

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  conventional-commits:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages on pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          scripts/check-conventional-commits.sh "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Validate commit message on push
+        if: github.event_name == 'push'
+        run: |
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            scripts/check-conventional-commits.sh HEAD
+          else
+            scripts/check-conventional-commits.sh "${{ github.event.before }}..${{ github.sha }}"
+          fi
+
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    needs:
+      - conventional-commits
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install agent-tui locally
+        run: ./scripts/install-agent-tui-local.sh
+
+      - name: Check formatting
+        run: |
+          make fmt
+          git diff --exit-code
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: make build
+
+      - name: TUI drift validation
+        env:
+          AGENT_TUI_BIN: ${{ github.workspace }}/.local-bin/agent-tui
+          TUI_VALIDATE_MOCK: '1'
+        run: |
+          mkdir -p "${{ github.workspace }}/.local-bin"
+          cp "$HOME/.local/bin/agent-tui" "${{ github.workspace }}/.local-bin/agent-tui"
+          chmod +x "${{ github.workspace }}/.local-bin/agent-tui"
+          make tui-validate

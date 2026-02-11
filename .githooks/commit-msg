@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+  printf '%s\n' "usage: commit-msg <message-file>" >&2
+  exit 1
+fi
+
+"$(dirname "$0")/../../scripts/check-conventional-commits.sh" --message-file "$1"

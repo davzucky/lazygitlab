@@ -51,6 +51,38 @@ make tui-validate
 This runs a scripted flow (`j`, `Tab`, `Shift+Tab`, `?`, `Esc`) and fails if
 the sidebar/main separator drifts during updates.
 
+For CI-safe mode (no external GitLab dependency), set mock mode:
+
+```bash
+TUI_VALIDATE_MOCK=1 make tui-validate
+```
+
+## Contributor workflow
+
+Install local git hooks:
+
+```bash
+make hooks
+```
+
+Run local quality checks before pushing:
+
+```bash
+make pre-commit
+```
+
+Validate conventional commits for recent history:
+
+```bash
+make commit-check
+```
+
+Full CI-equivalent run:
+
+```bash
+TUI_VALIDATE_MOCK=1 make ci
+```
+
 ## Project layout
 
 The code follows a strict internal-first layout inspired by

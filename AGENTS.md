@@ -2,6 +2,21 @@
 
 Repository guidance for coding agents working on LazyGitLab.
 
+## Work intake policy
+
+- Every code change must map to a GitHub issue.
+- If work is requested without an existing issue, create one first (or ask the user to create it) before implementation.
+- Reference the issue number in branches, commits, and PR descriptions.
+- Keep scope aligned to the issue acceptance criteria; open a follow-up issue for extra work.
+
+## Branch and MR workflow
+
+- Use an MR-based workflow for all feature work.
+- One issue maps to one branch and one merge request.
+- Branch naming should include the issue number (e.g., `feature/11-ci-automation`).
+- Do not implement multiple issues in a single MR.
+- Open the MR as soon as the issue scope is implemented and local checks pass.
+
 ## Stack and runtime
 
 - Language: Go
@@ -16,6 +31,14 @@ Repository guidance for coding agents working on LazyGitLab.
 - Test: `make test`
 - Lint: `make lint`
 - Format: `make fmt`
+- Local quality gate: `make pre-commit`
+- TUI regression (mock mode): `TUI_VALIDATE_MOCK=1 make tui-validate`
+
+## Automation and commit policy
+
+- CI is defined in `.github/workflows/ci.yml` and must pass before merge.
+- Conventional commits are required and validated in CI and local hooks.
+- Install local hooks with `make hooks`.
 
 ## Layout rules (strict internal-first)
 

@@ -4,6 +4,7 @@ set -eu
 AGENT_TUI_BIN="${AGENT_TUI_BIN:-$HOME/.local/bin/agent-tui}"
 APP_BIN="${APP_BIN:-$PWD/lazygitlab}"
 WAIT_TIMEOUT_MS="${WAIT_TIMEOUT_MS:-15000}"
+TUI_VALIDATE_MOCK="${TUI_VALIDATE_MOCK:-0}"
 
 if [ ! -x "$AGENT_TUI_BIN" ]; then
   printf '%s\n' "error: agent-tui not found at $AGENT_TUI_BIN" >&2
@@ -27,7 +28,11 @@ trap cleanup EXIT INT TERM
 
 "$AGENT_TUI_BIN" daemon start >/dev/null
 
-RUN_JSON=$("$AGENT_TUI_BIN" run --format json "$APP_BIN" -- --debug)
+if [ "$TUI_VALIDATE_MOCK" = "1" ]; then
+  RUN_JSON=$("$AGENT_TUI_BIN" run --format json /bin/sh -- -c "LAZYGITLAB_MOCK_DATA=1 \"$APP_BIN\" --debug")
+else
+  RUN_JSON=$("$AGENT_TUI_BIN" run --format json "$APP_BIN" -- --debug)
+fi
 SESSION_ID=$(printf '%s' "$RUN_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])')
 
 wait_stable() {
