@@ -1,123 +1,73 @@
 # AGENTS.md
 
-This guide summarizes how to build, lint, and test LazyDocker, plus the
-expected Go coding style in this repo. Use it as a default playbook for
-agentic edits.
+Repository guidance for coding agents working on LazyGitLab.
 
-## Quick facts
-- Language: Go (module `github.com/jesseduffield/lazydocker`).
-- go.mod: `go 1.22`, toolchain `go1.23.6`.
-- CI uses Go 1.24.x and enforces `GOFLAGS=-mod=vendor`.
-- Vendored dependencies are required; `vendor/` must stay in sync.
+## Stack and runtime
 
-## Build commands
-- Build locally: `go build`.
-- Build for OS targets (as in CI):
-  - `GOOS=linux go build`
-  - `GOOS=windows go build`
-  - `GOOS=darwin go build`
-- Run locally (source): `go run main.go`.
+- Language: Go
+- Minimum version: Go 1.23+
+- TUI: Bubble Tea + Lipgloss (+ Bubbles components)
+- GitLab API client: `gitlab.com/gitlab-org/api/client-go`
 
-## Test commands
-- Full test suite (CI): `bash ./test.sh`
-  - Uses `GOFLAGS=-mod=vendor`.
-  - Runs `go test -race -coverprofile=profile.out -covermode=atomic` per package.
-  - If `gotest` is installed, it uses `gotest` instead of `go test`.
-- Quick full test (manual): `GOFLAGS=-mod=vendor go test ./...`
+## Build, test, lint
 
-### Single test or single package
-- Single package: `GOFLAGS=-mod=vendor go test ./pkg/commands`
-- Single test by name:
-  - `GOFLAGS=-mod=vendor go test ./pkg/commands -run TestName`
-- Single subtest:
-  - `GOFLAGS=-mod=vendor go test ./pkg/commands -run TestName/Subcase`
-- Re-run without cache when debugging:
-  - `GOFLAGS=-mod=vendor go test ./pkg/commands -run TestName -count=1 -v`
+- Build: `make build`
+- Run: `make run`
+- Test: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
 
-## Lint and formatting
-- Lint (CI): `golangci-lint run`
-  - Config: `.golangci.yml`.
-- Format check (CI):
-  - `gofmt -s` on all `*.go` files outside `vendor/`.
-- Formatting expectations (by lint config):
-  - `gofumpt` and `goimports` are enabled. Use them if available.
+## Layout rules (strict internal-first)
 
-## Other CI checks
-- Cheatsheet validation:
-  - `go run scripts/cheatsheet/main.go check`
-- Vendor consistency check:
-  - `go mod vendor && git diff --exit-code`
+Follow `golang-standards/project-layout` with a strict internal strategy.
 
-## Dependency and vendor workflow
-- Vendor directory is the source of truth.
-- Typical dependency bump:
-  - `go get -u github.com/jesseduffield/gocui@master`
-  - `go mod tidy`
-  - `go mod vendor`
-- Local development often sets: `GOFLAGS=-mod=vendor`.
+- Keep `cmd/lazygitlab/main.go` thin; only parse flags and call app bootstrap.
+- Put app implementation under `internal/...`.
+- Use `pkg/...` only when a package is intentionally reusable externally.
+- Do not add a `/src` directory.
 
-## Repository layout
-- `main.go`: entry point and top-level error handling.
-- `pkg/`: application code (commands, gui, config, utils, etc.).
-- `scripts/`: helper scripts (cheatsheet generation/checks).
-- `vendor/`: vendored deps; do not edit unless updating deps.
+Current package map:
 
-## Code style guidelines
+- `internal/app`: lifecycle orchestration and wiring
+- `internal/config`: config load/save and precedence
+- `internal/gitlab`: API wrapper with retries and pagination
+- `internal/project`: Git remote parsing and project detection
+- `internal/tui`: all Bubble Tea models and views
+- `internal/logging`: debug log setup
 
-### Imports
-- Let `goimports` group and order imports.
-- Standard library first, then third-party, then local (`github.com/jesseduffield/lazydocker/...`).
-- Avoid unused imports; `goimports` will remove them.
+## Configuration behavior
 
-### Formatting
-- Run `gofmt -s` on all Go files.
-- Prefer `gofumpt` formatting for consistency (enforced by lint).
-- Keep lines readable; split long parameter lists and chained calls.
+Load configuration in this order (highest priority first):
 
-### Naming conventions
-- Use idiomatic Go naming: CamelCase for exports, lowerCamelCase for locals.
-- Avoid stutter in exported types and functions.
-- Keep acronyms consistent (e.g., `URL`, `ID`, `OS`).
-- File names match package purpose; platform-specific files use `_windows.go`, `_unix.go`.
+1. Environment: `GITLAB_TOKEN`, `GITLAB_HOST`
+2. `~/.config/lazygitlab/config.yml`
+3. `~/.config/glab-cli/config.yml`
 
-### Types and interfaces
-- Prefer concrete types unless an interface improves testability or decoupling.
-- Keep interfaces small and focused; prefer single-purpose interfaces.
-- Use `struct` fields to group related data; avoid oversized parameter lists.
+If configuration is missing/invalid, start interactive first-run setup wizard.
 
-### Error handling
-- Return errors to the caller; handle at the appropriate layer.
-- Use contextual errors and wrap where stack traces are needed.
-  - `commands.WrapError` wraps with `github.com/go-errors/errors`.
-- For command execution, prefer sanitized error messages (see `sanitisedCommandOutput`).
-- Avoid naked returns (enforced by `nakedret`).
+## TUI expectations
 
-### Logging
-- Use `logrus` (`pkg/log`) for structured logging.
-- Production logger discards output; debug uses JSON logs.
-- Prefer `logrus.Entry` with contextual fields rather than global logging.
+- Keyboard-driven navigation:
+  - `j/k`, arrow keys, `h/l`, `tab`, `shift+tab`, `enter`, `esc`, `q`, `?`
+- Multi-panel layout:
+  - Sidebar navigation
+  - Main list panel
+  - Details panel
+  - Status bar
+- Include loading and retryable error states.
 
-### Concurrency and tests
-- When appropriate, use `t.Parallel()` in tests (lint `tparallel`).
-- Mark helper test functions with `t.Helper()` (lint `thelper`).
-- Avoid data races; the test runner uses `-race` in CI.
+## TUI validation workflow
 
-### Switches and enums
-- Exhaustive checks are enabled (`exhaustive`).
-- Use explicit `default` only when it is a true fallback.
+- Prefer validating UI changes with `agent-tui` when available.
+- Skill file: `.opencode/skill/agent-tui/SKILL.md`.
+- Minimum validation pass:
+  - launch app in virtual PTY
+  - navigate with `j/k`, `tab`, `shift+tab`, `?`, `esc`
+  - verify no panel drift/overflow while data loads
 
-### Performance and correctness
-- Lints enforce: `wastedassign`, `unparam`, `prealloc`, `unconvert`, `makezero`.
-- Avoid unnecessary allocations; preallocate slices when size is known.
+## Quality bar
 
-## Build/test environment expectations
-- Set `GOFLAGS=-mod=vendor` for reproducible builds.
-- Ensure `vendor/` is up to date before committing changes.
-- CI runs on Linux and Windows for tests; keep platform differences in mind.
-
-## Cursor/Copilot rules
-- No `.cursorrules`, `.cursor/rules/`, or `.github/copilot-instructions.md` detected in this repo.
-
-## When in doubt
-- Follow Effective Go: https://golang.org/doc/effective_go.html
-- Mirror existing patterns in `pkg/commands`, `pkg/gui`, and `pkg/utils`.
+- Keep package names short and domain-focused.
+- Prefer explicit error wrapping with context.
+- Add unit tests for parsing/config precedence/state transitions.
+- Run `gofmt` and tests before finishing.

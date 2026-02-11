@@ -1,0 +1,4 @@
+host: https://gitlab.com/api/v4
+token: "<your-token>"
+last_project: group/project
+debug: false

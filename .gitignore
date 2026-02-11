@@ -1,38 +1,20 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Binaries
+/bin/
+/dist/
 /lazygitlab
-bin/
 
-# Test binary, built with `go test -c`
+# Go
 *.test
-
-# Output of the go coverage tool
 *.out
-
-# Dependency directories
-vendor/
-
-# Go workspace file
-go.work
+coverage.out
 
 # IDE
-.vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-#sample code for agent
-crush
-lazygit
+.vscode/
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Config and logs (development only, never commit actual configs)
-*.log
+# Local config and logs
+.env
+debug.log
