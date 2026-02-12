@@ -235,21 +235,6 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		if msg.String() == "esc" && m.view != PrimaryView {
-			m.view = PrimaryView
-			m.selected = 0
-			m.loading = false
-			m.loadingMore = false
-			m.errorMessage = ""
-			m.issueDetail = false
-			m.detailScroll = 0
-			m.detailTab = issueDetailTabOverview
-			m.detailLoad = false
-			m.detailErr = ""
-			m.items = nil
-			return m, nil
-		}
-
 		if m.issueDetail {
 			switch msg.String() {
 			case "esc":
@@ -333,6 +318,21 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if msg.String() == "esc" && m.view != PrimaryView {
+			m.view = PrimaryView
+			m.selected = 0
+			m.loading = false
+			m.loadingMore = false
+			m.errorMessage = ""
+			m.issueDetail = false
+			m.detailScroll = 0
+			m.detailTab = issueDetailTabOverview
+			m.detailLoad = false
+			m.detailErr = ""
+			m.items = nil
+			return m, nil
+		}
+
 		if model, cmd, handled := m.handlePrimaryScreenKey(msg.String()); handled {
 			return model, cmd
 		}
@@ -369,11 +369,6 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view < MergeRequestsView {
 				m.view++
 				m.selected = 0
-				if m.view == PrimaryView {
-					m.loading = false
-					m.items = nil
-					return m, nil
-				}
 				return m.startLoadCurrentView()
 			}
 		case "tab":
@@ -483,16 +478,14 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	} else if m.view == IssuesView {
 		lines = append(lines, m.renderIssueBody(width)...)
 	} else {
-		lines = append(lines, m.renderMergeRequestBody()...)
+		lines = append(lines, m.renderMergeRequestBody(width)...)
 	}
 	bodyRows := max(1, height-len(lines)-2)
-	if m.view == PrimaryView {
-		// Primary screen renders its own body.
-	} else if m.loading {
+	if m.view != PrimaryView && m.loading {
 		lines = append(lines, "  "+m.spinner.View()+" Loading...")
-	} else if len(m.items) == 0 {
+	} else if m.view != PrimaryView && len(m.items) == 0 {
 		lines = append(lines, "  No items")
-	} else {
+	} else if m.view != PrimaryView {
 		contentWidth := max(10, width-8)
 		rowWidth := max(1, contentWidth-2)
 		rowsPerItem := 1

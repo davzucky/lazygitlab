@@ -8,12 +8,12 @@ func (m DashboardModel) handlePrimaryScreenKey(key string) (tea.Model, tea.Cmd, 
 	}
 
 	switch key {
-	case "j", "down", "tab":
+	case "j", "down":
 		if m.primaryIndex < 1 {
 			m.primaryIndex++
 		}
 		return m, nil, true
-	case "k", "up", "shift+tab":
+	case "k", "up":
 		if m.primaryIndex > 0 {
 			m.primaryIndex--
 		}

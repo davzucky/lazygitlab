@@ -111,6 +111,56 @@ func TestDashboardEscReturnsToPrimaryFromMergeRequests(t *testing.T) {
 	}
 }
 
+func TestDashboardLeftFromIssuesReturnsPrimary(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model := updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardTabCyclesThroughPrimaryIssueMergeRequest(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model := updated.(DashboardModel)
+	if model.view != IssuesView {
+		t.Fatalf("view after first tab = %v want %v", model.view, IssuesView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.view != MergeRequestsView {
+		t.Fatalf("view after second tab = %v want %v", model.view, MergeRequestsView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view after third tab = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardShiftTabCyclesBackFromPrimaryToMergeRequest(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	model := updated.(DashboardModel)
+	if model.view != MergeRequestsView {
+		t.Fatalf("view = %v want %v", model.view, MergeRequestsView)
+	}
+}
+
 func TestDashboardIssueStateTabReloads(t *testing.T) {
 	t.Parallel()
 
