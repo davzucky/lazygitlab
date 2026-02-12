@@ -21,6 +21,8 @@ type Client interface {
 	GetProject(ctx context.Context, projectPath string) (*gl.Project, error)
 	ListProjects(ctx context.Context, search string) ([]*gl.Project, error)
 	ListIssues(ctx context.Context, projectPath string, opts IssueListOptions) ([]*gl.Issue, bool, error)
+	ListIssueNotes(ctx context.Context, projectPath string, issueIID int64) ([]*gl.Note, error)
+	ListIssueStateEvents(ctx context.Context, projectPath string, issueIID int64) ([]*gl.StateEvent, error)
 	ListMergeRequests(ctx context.Context, projectPath string, state string) ([]*gl.BasicMergeRequest, error)
 }
 
@@ -153,6 +155,66 @@ func (c *client) ListIssues(ctx context.Context, projectPath string, opts IssueL
 
 	hasNextPage := resp != nil && resp.NextPage > 0
 	return issues, hasNextPage, nil
+}
+
+func (c *client) ListIssueNotes(ctx context.Context, projectPath string, issueIID int64) ([]*gl.Note, error) {
+	all := make([]*gl.Note, 0, defaultPerPage)
+	page := int64(1)
+
+	for {
+		opts := &gl.ListIssueNotesOptions{
+			ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage},
+		}
+
+		var notes []*gl.Note
+		var resp *gl.Response
+		err := c.withRetry(ctx, "ListIssueNotes", func() (*gl.Response, error) {
+			var err error
+			notes, resp, err = c.api.Notes.ListIssueNotes(projectPath, issueIID, opts, gl.WithContext(ctx))
+			return resp, err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list notes for issue %d in project %q: %w", issueIID, projectPath, err)
+		}
+
+		all = append(all, notes...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
+	return all, nil
+}
+
+func (c *client) ListIssueStateEvents(ctx context.Context, projectPath string, issueIID int64) ([]*gl.StateEvent, error) {
+	all := make([]*gl.StateEvent, 0, defaultPerPage)
+	page := int64(1)
+
+	for {
+		opts := &gl.ListStateEventsOptions{
+			ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage},
+		}
+
+		var events []*gl.StateEvent
+		var resp *gl.Response
+		err := c.withRetry(ctx, "ListIssueStateEvents", func() (*gl.Response, error) {
+			var err error
+			events, resp, err = c.api.ResourceStateEvents.ListIssueStateEvents(projectPath, issueIID, opts, gl.WithContext(ctx))
+			return resp, err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list state events for issue %d in project %q: %w", issueIID, projectPath, err)
+		}
+
+		all = append(all, events...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
+	return all, nil
 }
 
 func (c *client) ListMergeRequests(ctx context.Context, projectPath string, state string) ([]*gl.BasicMergeRequest, error) {
