@@ -305,7 +305,7 @@ func (m DashboardModel) View() string {
 	}
 
 	totalWidth := max(60, m.width-2)
-	contentHeight := max(8, m.height-3)
+	contentHeight := max(8, m.height-5)
 	status := m.renderStatusBar(totalWidth)
 
 	if m.issueDetail {
@@ -349,8 +349,8 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	lines := []string{header}
 	if m.view == IssuesView {
 		lines = append(lines,
-			" "+m.renderIssueTabs(max(20, width-6)),
-			" "+m.renderIssueSearch(max(20, width-6)),
+			" "+m.renderIssueTabs(max(20, width-8)),
+			" "+m.renderIssueSearch(max(20, width-8)),
 			m.styles.dim.Render(" enter: open issue details"),
 			m.styles.dim.Render(" sort: updated newest first"),
 			"",
@@ -364,9 +364,11 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	} else if len(m.items) == 0 {
 		lines = append(lines, "  No items")
 	} else {
-		contentWidth := max(10, width-6)
+		contentWidth := max(10, width-8)
+		rowWidth := max(1, contentWidth-2)
 		rowsPerItem := 1
 		if m.view == IssuesView {
+			rowWidth = minInt(rowWidth, 52)
 			rowsPerItem = 2
 		}
 		visibleItems := max(1, bodyRows/rowsPerItem)
@@ -379,10 +381,10 @@ func (m DashboardModel) renderMain(width int, height int) string {
 				prefix = "› "
 				rowStyle = m.styles.selectedRow
 			}
-			line := prefix + fitLine(item.Title, contentWidth)
+			line := prefix + fitLine(item.Title, rowWidth)
 			lines = append(lines, rowStyle.Render(line))
 			if m.view == IssuesView {
-				meta := "  " + fitLine(issueListMeta(item), contentWidth)
+				meta := "  " + fitLine(issueListMeta(item), rowWidth)
 				lines = append(lines, m.styles.dim.Render(meta))
 			}
 		}
@@ -649,7 +651,7 @@ func fallbackValue(value string, fallback string) string {
 
 func (m DashboardModel) issueDetailViewport() (int, int) {
 	totalWidth := max(60, m.width-2)
-	contentHeight := max(8, m.height-3)
+	contentHeight := max(8, m.height-5)
 	contentWidth := max(10, totalWidth-m.styles.panel.GetHorizontalFrameSize()-2)
 	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-3)
 	return contentWidth, bodyRows
