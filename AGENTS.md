@@ -79,6 +79,25 @@ If configuration is missing/invalid, start interactive first-run setup wizard.
   - Status bar
 - Include loading and retryable error states.
 
+## TUI screen architecture
+
+- Treat each main TUI area as its own screen module:
+  - `Primary` (home/lookup)
+  - `Issue`
+  - `Merge Request`
+- Keep `internal/tui/dashboard.go` as the shell/router:
+  - app-level chrome (sidebar/status/help/error)
+  - active screen switching
+  - shared context/provider wiring
+- Keep screen-specific behavior in dedicated files (`screen_<name>.go`) and avoid expanding shell conditionals.
+- New screen workflow:
+  1. Add/extend a `ViewMode` entry for the screen.
+  2. Create `internal/tui/screen_<name>.go` with key handling and rendering helpers.
+  3. Register navigation from `Primary` so the screen is discoverable.
+  4. Add tests for routing, key behavior, and loading/error handling.
+  5. Validate in mock mode with `TUI_VALIDATE_MOCK=1 just tui-validate`.
+- Esc behavior for top-level screens should return to `Primary` (screen-local Esc behavior can still close local overlays/details first).
+
 ## TUI validation workflow
 
 - Prefer validating UI changes with `agent-tui` when available.
