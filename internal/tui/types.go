@@ -14,6 +14,19 @@ type ListItem struct {
 	Title    string
 	Subtitle string
 	URL      string
+	Issue    *IssueDetails
+}
+
+type IssueDetails struct {
+	IID         int64
+	State       string
+	Author      string
+	Assignees   []string
+	Labels      []string
+	CreatedAt   string
+	UpdatedAt   string
+	URL         string
+	Description string
 }
 
 type IssueState string

@@ -39,6 +39,8 @@ type DashboardModel struct {
 	issueSearch  string
 	issuePage    int
 	issueHasNext bool
+	issueDetail  bool
+	detailScroll int
 	loadingMore  bool
 	requestSeq   int
 	requestID    int
@@ -118,6 +120,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selected >= len(m.items) {
 			m.selected = 0
 		}
+		if !m.hasIssueDetailsSelection() {
+			m.issueDetail = false
+			m.detailScroll = 0
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -160,9 +166,42 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.issueDetail {
+			switch msg.String() {
+			case "esc":
+				m.issueDetail = false
+				m.detailScroll = 0
+				return m, nil
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "j", "down":
+				m.detailScroll = m.clampDetailScroll(m.detailScroll + 1)
+				return m, nil
+			case "k", "up":
+				m.detailScroll = m.clampDetailScroll(m.detailScroll - 1)
+				return m, nil
+			case "pgdown":
+				m.detailScroll = m.clampDetailScroll(m.detailScroll + 8)
+				return m, nil
+			case "pgup":
+				m.detailScroll = m.clampDetailScroll(m.detailScroll - 8)
+				return m, nil
+			case "?":
+				m.showHelp = true
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "enter":
+			if m.view == IssuesView && m.hasIssueDetailsSelection() {
+				m.issueDetail = true
+				m.detailScroll = 0
+				return m, nil
+			}
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
 				m.selected++
@@ -266,17 +305,19 @@ func (m DashboardModel) View() string {
 	}
 
 	totalWidth := max(60, m.width-2)
-	navWidth := minInt(28, max(22, totalWidth/4))
-	mainWidth := max(36, totalWidth-navWidth)
-	mainHeight := max(10, (m.height*2)/3)
-	detailsHeight := max(6, m.height-mainHeight-4)
-
-	sidebar := m.renderSidebar(navWidth, mainHeight+detailsHeight+2)
-	main := m.renderMain(mainWidth, mainHeight)
-	details := m.renderDetails(mainWidth, detailsHeight)
+	contentHeight := max(8, m.height-5)
 	status := m.renderStatusBar(totalWidth)
 
-	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, lipgloss.JoinVertical(lipgloss.Left, main, details))
+	if m.issueDetail {
+		detail := m.renderIssueDetailFullscreen(totalWidth, contentHeight)
+		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
+	}
+
+	navWidth := minInt(28, max(22, totalWidth/4))
+	mainWidth := max(36, totalWidth-navWidth)
+	sidebar := m.renderSidebar(navWidth, contentHeight)
+	main := m.renderMain(mainWidth, contentHeight)
+	content := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, main)
 	return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, content, status))
 }
 
@@ -292,7 +333,7 @@ func (m DashboardModel) renderSidebar(width int, height int) string {
 		m.styles.dim.Render("q quit, ? help"),
 	}
 
-	return m.styles.panel.Width(width).Height(height).Render(strings.Join(items, "\n"))
+	return renderSizedBox(m.styles.panel, width, height, strings.Join(items, "\n"))
 }
 
 func (m DashboardModel) navLabel(view ViewMode, label string) string {
@@ -308,8 +349,9 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	lines := []string{header}
 	if m.view == IssuesView {
 		lines = append(lines,
-			" "+m.renderIssueTabs(max(20, width-6)),
-			" "+m.renderIssueSearch(max(20, width-6)),
+			" "+m.renderIssueTabs(max(20, width-8)),
+			" "+m.renderIssueSearch(max(20, width-8)),
+			m.styles.dim.Render(" enter: open issue details"),
 			m.styles.dim.Render(" sort: updated newest first"),
 			"",
 		)
@@ -322,8 +364,15 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	} else if len(m.items) == 0 {
 		lines = append(lines, "  No items")
 	} else {
-		contentWidth := max(10, width-6)
-		start, end := visibleRange(len(m.items), m.selected, bodyRows)
+		contentWidth := max(10, width-8)
+		rowWidth := max(1, contentWidth-2)
+		rowsPerItem := 1
+		if m.view == IssuesView {
+			rowWidth = minInt(rowWidth, 52)
+			rowsPerItem = 2
+		}
+		visibleItems := max(1, bodyRows/rowsPerItem)
+		start, end := visibleRange(len(m.items), m.selected, visibleItems)
 		for i := start; i < end; i++ {
 			item := m.items[i]
 			prefix := "  "
@@ -332,11 +381,15 @@ func (m DashboardModel) renderMain(width int, height int) string {
 				prefix = "› "
 				rowStyle = m.styles.selectedRow
 			}
-			line := prefix + fitLine(item.Title, contentWidth)
+			line := prefix + fitLine(item.Title, rowWidth)
 			lines = append(lines, rowStyle.Render(line))
+			if m.view == IssuesView {
+				meta := "  " + fitLine(issueListMeta(item), rowWidth)
+				lines = append(lines, m.styles.dim.Render(meta))
+			}
 		}
 
-		if len(m.items) > bodyRows {
+		if len(m.items) > visibleItems {
 			footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
 			lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
 		}
@@ -345,31 +398,41 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		}
 	}
 
-	lines = fitHeight(lines, height-2)
-	return m.styles.panel.Width(width).Height(height).Render(strings.Join(lines, "\n"))
+	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+	lines = fitHeight(lines, innerHeight)
+	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
 }
 
-func (m DashboardModel) renderDetails(width int, height int) string {
-	lines := []string{m.styles.header.Render("Details"), ""}
-
-	if len(m.items) == 0 || m.selected >= len(m.items) {
-		lines = append(lines, m.styles.dim.Render("No selection"))
-	} else {
-		contentWidth := max(10, width-8)
-		item := m.items[m.selected]
-		lines = append(lines,
-			fmt.Sprintf("ID: %d", item.ID),
-			fmt.Sprintf("Title: %s", fitLine(item.Title, contentWidth)),
-		)
-		if item.Subtitle != "" {
-			lines = append(lines, fmt.Sprintf("Info: %s", fitLine(item.Subtitle, contentWidth)))
-		}
-		if item.URL != "" {
-			lines = append(lines, fmt.Sprintf("URL: %s", fitLine(item.URL, contentWidth)))
-		}
+func (m DashboardModel) renderIssueDetailFullscreen(width int, height int) string {
+	contentWidth := max(10, width-6)
+	lines := []string{m.styles.header.Render("Issue Detail"), m.styles.dim.Render("Esc to return • j/k to scroll"), ""}
+	detailLines := m.issueDetailLines(contentWidth)
+	if len(detailLines) == 0 {
+		lines = append(lines, m.styles.dim.Render("No issue details available"))
+		innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+		lines = fitHeight(lines, innerHeight)
+		return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
 	}
 
-	return m.styles.panel.Width(width).Height(height).Render(strings.Join(lines, "\n"))
+	bodyRows := max(1, height-len(lines)-2)
+	maxScroll := max(0, len(detailLines)-bodyRows)
+	start := m.detailScroll
+	if start > maxScroll {
+		start = maxScroll
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := minInt(len(detailLines), start+bodyRows)
+	lines = append(lines, detailLines[start:end]...)
+	if len(detailLines) > bodyRows {
+		footer := fmt.Sprintf("%d-%d of %d", start+1, end, len(detailLines))
+		lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
+	}
+
+	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+	lines = fitHeight(lines, innerHeight)
+	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
 }
 
 func (m DashboardModel) renderStatusBar(width int) string {
@@ -385,7 +448,8 @@ func (m DashboardModel) renderStatusBar(width int) string {
 			status += " | loading more"
 		}
 	}
-	return m.styles.status.Width(width).Render(fitLine(status, max(10, width-2)))
+	innerWidth := max(1, width-m.styles.status.GetHorizontalFrameSize())
+	return m.styles.status.Width(innerWidth).Render(fitLine(status, innerWidth))
 }
 
 func (m DashboardModel) renderHelp() string {
@@ -398,6 +462,8 @@ Navigation:
 
 Actions:
   1,2                 Jump to view
+  enter               Open issue detail panel
+  esc                 Close issue detail panel
   [,] or o/c/a        Issue state tabs
   /                   Search issues
   r                   Retry after error
@@ -410,6 +476,8 @@ Actions:
 func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.loadingMore = false
+	m.issueDetail = false
+	m.detailScroll = 0
 	m.requestSeq++
 	m.requestID = m.requestSeq
 	if m.view == IssuesView {
@@ -427,6 +495,211 @@ func (m DashboardModel) startLoadMoreIssues() (tea.Model, tea.Cmd) {
 	m.requestID = m.requestSeq
 	nextPage := m.issuePage + 1
 	return m, m.loadCurrentViewCmd(m.requestID, false, nextPage)
+}
+
+func (m DashboardModel) hasIssueDetailsSelection() bool {
+	if m.view != IssuesView {
+		return false
+	}
+	if len(m.items) == 0 || m.selected < 0 || m.selected >= len(m.items) {
+		return false
+	}
+	return m.items[m.selected].Issue != nil
+}
+
+func (m DashboardModel) clampDetailScroll(next int) int {
+	contentWidth, bodyRows := m.issueDetailViewport()
+	lines := m.issueDetailLines(contentWidth)
+	maxScroll := max(0, len(lines)-bodyRows)
+	if next < 0 {
+		return 0
+	}
+	if next > maxScroll {
+		return maxScroll
+	}
+	return next
+}
+
+func (m DashboardModel) issueDetailLines(width int) []string {
+	if !m.hasIssueDetailsSelection() {
+		return nil
+	}
+	item := m.items[m.selected]
+	details := item.Issue
+	if details == nil {
+		return nil
+	}
+
+	author := fallbackValue(details.Author, "-")
+	assignees := joinOrFallback(details.Assignees, "Unassigned")
+	labels := joinOrFallback(details.Labels, "None")
+	createdAt := fallbackValue(details.CreatedAt, "-")
+	updatedAt := fallbackValue(details.UpdatedAt, "-")
+	url := fallbackValue(details.URL, "-")
+	state := fallbackValue(details.State, "-")
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("#%d", details.IID)
+	}
+
+	lines := []string{
+		fmt.Sprintf("Title: %s", fallbackValue(item.Title, "-")),
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", state),
+		fmt.Sprintf("Author: %s", author),
+		fmt.Sprintf("Assignees: %s", assignees),
+		fmt.Sprintf("Labels: %s", labels),
+		fmt.Sprintf("Created: %s", createdAt),
+		fmt.Sprintf("Updated: %s", updatedAt),
+		fmt.Sprintf("URL: %s", url),
+		"",
+		"Description:",
+	}
+
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		lines = append(lines, "No description provided.")
+		return wrapLines(lines, width)
+	}
+
+	wrappedMeta := wrapLines(lines, width)
+	wrappedDescription := wrapParagraphs(description, width)
+	return append(wrappedMeta, wrappedDescription...)
+}
+
+func wrapLines(lines []string, width int) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		parts := wrapLine(line, width)
+		if len(parts) == 0 {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, parts...)
+	}
+	return out
+}
+
+func wrapParagraphs(input string, width int) []string {
+	paragraphs := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		trimmed := strings.TrimSpace(paragraph)
+		if trimmed == "" {
+			out = append(out, "")
+			continue
+		}
+		out = append(out, wrapLine(trimmed, width)...)
+	}
+	return out
+}
+
+func wrapLine(input string, width int) []string {
+	if width <= 1 {
+		return []string{fitLine(input, max(1, width))}
+	}
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return []string{""}
+	}
+
+	words := strings.Fields(trimmed)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	lines := make([]string, 0, len(words)/2+1)
+	current := words[0]
+	for _, word := range words[1:] {
+		candidate := current + " " + word
+		if len([]rune(candidate)) <= width {
+			current = candidate
+			continue
+		}
+		lines = append(lines, current)
+		current = word
+	}
+	lines = append(lines, current)
+
+	for i := range lines {
+		lines[i] = fitLine(lines[i], width)
+	}
+	return lines
+}
+
+func joinOrFallback(values []string, fallback string) string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	if len(filtered) == 0 {
+		return fallback
+	}
+	return strings.Join(filtered, ", ")
+}
+
+func fallbackValue(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func (m DashboardModel) issueDetailViewport() (int, int) {
+	totalWidth := max(60, m.width-2)
+	contentHeight := max(8, m.height-5)
+	contentWidth := max(10, totalWidth-m.styles.panel.GetHorizontalFrameSize()-2)
+	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-3)
+	return contentWidth, bodyRows
+}
+
+func renderSizedBox(style lipgloss.Style, width int, height int, content string) string {
+	innerWidth := max(1, width-style.GetHorizontalFrameSize())
+	innerHeight := max(1, height-style.GetVerticalFrameSize())
+	return style.Width(innerWidth).Height(innerHeight).Render(content)
+}
+
+func issueListMeta(item ListItem) string {
+	const (
+		authorColWidth   = 22
+		assigneeColWidth = 22
+	)
+
+	if item.Issue == nil {
+		if strings.TrimSpace(item.Subtitle) != "" {
+			return item.Subtitle
+		}
+		return fmt.Sprintf(
+			"by %s | to %s | created %s",
+			padOrTrimRight("-", authorColWidth),
+			padOrTrimRight("Unassigned", assigneeColWidth),
+			"-",
+		)
+	}
+	author := padOrTrimRight(fallbackValue(item.Issue.Author, "-"), authorColWidth)
+	assignee := padOrTrimRight(joinOrFallback(item.Issue.Assignees, "Unassigned"), assigneeColWidth)
+	created := fallbackValue(item.Issue.CreatedAt, "-")
+	return fmt.Sprintf(
+		"by %s | to %s | created %s",
+		author,
+		assignee,
+		created,
+	)
+}
+
+func padOrTrimRight(input string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(input))
+	if len(runes) >= width {
+		return string(runes[:width])
+	}
+	return string(runes) + strings.Repeat(" ", width-len(runes))
 }
 
 func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPage int) tea.Cmd {
