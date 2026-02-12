@@ -29,7 +29,7 @@ trap cleanup EXIT INT TERM
 "$AGENT_TUI_BIN" daemon start >/dev/null
 
 if [ "$TUI_VALIDATE_MOCK" = "1" ]; then
-  RUN_JSON=$("$AGENT_TUI_BIN" run --format json /bin/sh -- -c "LAZYGITLAB_MOCK_DATA=1 \"$APP_BIN\" --debug")
+  RUN_JSON=$(LAZYGITLAB_MOCK_DATA=1 "$AGENT_TUI_BIN" run --format json "$APP_BIN" -- --debug)
 else
   RUN_JSON=$("$AGENT_TUI_BIN" run --format json "$APP_BIN" -- --debug)
 fi
