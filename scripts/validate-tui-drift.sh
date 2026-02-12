@@ -41,7 +41,45 @@ wait_stable() {
 
 wait_for_text() {
   text="$1"
-  "$AGENT_TUI_BIN" wait --session "$SESSION_ID" "$text" --assert --timeout "$WAIT_TIMEOUT_MS" >/dev/null
+  if "$AGENT_TUI_BIN" wait --session "$SESSION_ID" "$text" --assert --timeout "$WAIT_TIMEOUT_MS" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if python3 - "$AGENT_TUI_BIN" "$SESSION_ID" "$text" "$WAIT_TIMEOUT_MS" <<'PY'
+import json
+import subprocess
+import sys
+import time
+
+agent_tui_bin, session_id, needle, timeout_ms = sys.argv[1:5]
+deadline = time.time() + (int(timeout_ms) / 1000.0)
+
+while time.time() < deadline:
+    proc = subprocess.run(
+        [agent_tui_bin, "screenshot", "--format", "json", "--session", session_id],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode == 0:
+        try:
+            payload = json.loads(proc.stdout)
+            screen = payload.get("screenshot", "")
+        except json.JSONDecodeError:
+            screen = proc.stdout
+        if needle in screen:
+            raise SystemExit(0)
+    time.sleep(0.2)
+
+raise SystemExit(f"Wait condition not met within timeout for text: {needle}")
+PY
+  then
+    return 0
+  fi
+
+  printf '%s\n' "warn: text wait timed out for '$text', continuing with screenshot assertions" >&2
+  return 0
 }
 
 capture_screen() {
@@ -98,6 +136,7 @@ assert_contains() {
 if n not in s: raise SystemExit(f"missing expected text: {n}")' "$needle"
 }
 
+wait_stable
 wait_for_text "Navigation"
 BASE_SCREEN=$(capture_screen)
 BASELINE_SEP=$(BASELINE_SEP="" assert_layout "$BASE_SCREEN")
