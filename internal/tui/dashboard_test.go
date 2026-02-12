@@ -269,3 +269,32 @@ func TestDashboardIssueDetailTabSwitches(t *testing.T) {
 		t.Fatalf("detail tab = %v want %v", model.detailTab, issueDetailTabOverview)
 	}
 }
+
+func TestDashboardIssueDetailMnemonicTabKeys(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.loading = false
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	model = updated.(DashboardModel)
+	if model.detailTab != issueDetailTabActivities {
+		t.Fatalf("detail tab = %v want %v", model.detailTab, issueDetailTabActivities)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	model = updated.(DashboardModel)
+	if model.detailTab != issueDetailTabComments {
+		t.Fatalf("detail tab = %v want %v", model.detailTab, issueDetailTabComments)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	model = updated.(DashboardModel)
+	if model.detailTab != issueDetailTabOverview {
+		t.Fatalf("detail tab = %v want %v", model.detailTab, issueDetailTabOverview)
+	}
+}
