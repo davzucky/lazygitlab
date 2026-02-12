@@ -58,6 +58,17 @@ func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.
 			Title:    title,
 			Subtitle: fmt.Sprintf("#%d • %s", 3000+i, issueState),
 			URL:      fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
+			Issue: &tui.IssueDetails{
+				IID:         int64(3000 + i),
+				State:       issueState,
+				Author:      "Mock Author",
+				Assignees:   []string{"Mock Assignee"},
+				Labels:      []string{"mock", "ui"},
+				CreatedAt:   "2026-01-01 10:00 UTC",
+				UpdatedAt:   "2026-01-02 11:00 UTC",
+				URL:         fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
+				Description: "Mock issue description for validating wrapped and scrollable issue detail rendering in the dashboard.",
+			},
 		})
 	}
 

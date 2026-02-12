@@ -20,9 +20,9 @@ type stubProvider struct {
 func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueResult, error) {
 	s.issueCalls = append(s.issueCalls, issueCall{State: query.State, Search: query.Search, Page: query.Page})
 	if query.Page == 2 {
-		return IssueResult{Items: []ListItem{{ID: 12, Title: "Issue two"}}, HasNextPage: false}, nil
+		return IssueResult{Items: []ListItem{{ID: 12, Title: "Issue two", Issue: &IssueDetails{IID: 102, State: "opened", Description: "second issue"}}}, HasNextPage: false}, nil
 	}
-	return IssueResult{Items: []ListItem{{ID: 11, Title: "Issue one"}}, HasNextPage: true}, nil
+	return IssueResult{Items: []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}, HasNextPage: true}, nil
 }
 
 func (s *stubProvider) LoadMergeRequests(context.Context) ([]ListItem, error) {
@@ -47,7 +47,7 @@ func TestDashboardIssueStateTabReloads(t *testing.T) {
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
 	m.loading = false
-	m.items = []ListItem{{ID: 11, Title: "Issue one"}}
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	model := updated.(DashboardModel)
@@ -74,7 +74,7 @@ func TestDashboardIssueAllTabReloads(t *testing.T) {
 	m := NewDashboardModel(provider, DashboardContext{})
 	m.loading = false
 	m.issueState = IssueStateClosed
-	m.items = []ListItem{{ID: 11, Title: "Issue one"}}
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "closed", Description: "first issue"}}}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	model := updated.(DashboardModel)
@@ -100,7 +100,10 @@ func TestDashboardLoadsNextIssuePageNearEnd(t *testing.T) {
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
 	m.loading = false
-	m.items = []ListItem{{ID: 11, Title: "Issue one"}, {ID: 13, Title: "Issue three"}}
+	m.items = []ListItem{
+		{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}},
+		{ID: 13, Title: "Issue three", Issue: &IssueDetails{IID: 103, State: "opened", Description: "third issue"}},
+	}
 	m.selected = 0
 	m.issuePage = 1
 	m.issueHasNext = true
@@ -160,9 +163,76 @@ func TestDashboardInitialRequestIDAcceptsFirstLoad(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
-	updated, _ := m.Update(loadedMsg{view: IssuesView, items: []ListItem{{ID: 99, Title: "Loaded"}}, requestID: 1, replace: true})
+	updated, _ := m.Update(loadedMsg{view: IssuesView, items: []ListItem{{ID: 99, Title: "Loaded", Issue: &IssueDetails{IID: 199, State: "opened", Description: "loaded issue"}}}, requestID: 1, replace: true})
 	model := updated.(DashboardModel)
 	if len(model.items) == 0 {
 		t.Fatal("expected first load message to be accepted")
+	}
+}
+
+func TestDashboardIssueDetailOpensAndCloses(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.loading = false
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	if !model.issueDetail {
+		t.Fatal("expected issue detail view to open")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(DashboardModel)
+	if model.issueDetail {
+		t.Fatal("expected issue detail view to close")
+	}
+}
+
+func TestDashboardIssueDetailEnterDoesNotClose(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.loading = false
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
+
+	if !model.issueDetail {
+		t.Fatal("expected issue detail view to remain open on Enter")
+	}
+}
+
+func TestDashboardIssueDetailScrollDoesNotMoveSelection(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.loading = false
+	m.width = 100
+	m.height = 20
+	m.items = []ListItem{{
+		ID:    11,
+		Title: "Issue one",
+		Issue: &IssueDetails{
+			IID:         101,
+			State:       "opened",
+			Description: "line one line two line three line four line five line six line seven line eight line nine line ten",
+		},
+	}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	model = updated.(DashboardModel)
+
+	if model.selected != 0 {
+		t.Fatalf("selected = %d want %d", model.selected, 0)
+	}
+	if model.detailScroll == 0 {
+		t.Fatal("expected detail scroll to advance")
 	}
 }
