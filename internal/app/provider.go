@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -118,6 +119,75 @@ func (p *Provider) LoadMergeRequests(ctx context.Context) ([]tui.ListItem, error
 	}
 
 	return items, nil
+}
+
+func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui.IssueDetailData, error) {
+	if p.projectPath == "" {
+		return tui.IssueDetailData{}, fmt.Errorf("no project context selected")
+	}
+	if issueIID <= 0 {
+		return tui.IssueDetailData{}, fmt.Errorf("invalid issue IID: %d", issueIID)
+	}
+
+	notes, err := p.client.ListIssueNotes(ctx, p.projectPath, issueIID)
+	if err != nil {
+		return tui.IssueDetailData{}, err
+	}
+	stateEvents, err := p.client.ListIssueStateEvents(ctx, p.projectPath, issueIID)
+	if err != nil {
+		return tui.IssueDetailData{}, err
+	}
+
+	comments := make([]tui.IssueComment, 0, len(notes))
+	activities := make([]tui.IssueActivity, 0, len(notes)+len(stateEvents))
+
+	for _, note := range notes {
+		if note == nil {
+			continue
+		}
+		author := displayName(note.Author.Name, note.Author.Username)
+		createdAt := formatIssueTime(note.CreatedAt)
+		body := strings.TrimSpace(note.Body)
+		if note.System {
+			if body == "" {
+				body = "System activity"
+			}
+			activities = append(activities, tui.IssueActivity{Actor: author, CreatedAt: createdAt, Action: body})
+			continue
+		}
+		if body == "" {
+			continue
+		}
+		comments = append(comments, tui.IssueComment{Author: author, CreatedAt: createdAt, Body: body})
+	}
+
+	for _, event := range stateEvents {
+		if event == nil {
+			continue
+		}
+		actor := "-"
+		if event.User != nil {
+			actor = displayName(event.User.Name, event.User.Username)
+		}
+		action := strings.TrimSpace(string(event.State))
+		if action == "" {
+			action = "state changed"
+		}
+		activities = append(activities, tui.IssueActivity{
+			Actor:     actor,
+			CreatedAt: formatIssueTime(event.CreatedAt),
+			Action:    action,
+		})
+	}
+
+	sort.SliceStable(comments, func(i int, j int) bool {
+		return comments[i].CreatedAt > comments[j].CreatedAt
+	})
+	sort.SliceStable(activities, func(i int, j int) bool {
+		return activities[i].CreatedAt > activities[j].CreatedAt
+	})
+
+	return tui.IssueDetailData{Comments: comments, Activities: activities}, nil
 }
 
 func displayName(name string, username string) string {

@@ -97,3 +97,21 @@ func (p *MockProvider) LoadMergeRequests(context.Context) ([]tui.ListItem, error
 
 	return items, nil
 }
+
+func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (tui.IssueDetailData, error) {
+	if issueIID <= 0 {
+		return tui.IssueDetailData{}, fmt.Errorf("invalid issue IID: %d", issueIID)
+	}
+
+	return tui.IssueDetailData{
+		Activities: []tui.IssueActivity{
+			{Actor: "Mock Author", CreatedAt: "2026-01-02 11:30 UTC", Action: "closed"},
+			{Actor: "Mock Assignee", CreatedAt: "2026-01-02 11:20 UTC", Action: "reopened"},
+			{Actor: "Mock Author", CreatedAt: "2026-01-01 10:10 UTC", Action: "added label ~ui"},
+		},
+		Comments: []tui.IssueComment{
+			{Author: "Mock Reviewer", CreatedAt: "2026-01-02 11:10 UTC", Body: "Looks good overall.\n\n- Please update the loading copy\n- Add one more test"},
+			{Author: "Mock Author", CreatedAt: "2026-01-01 10:05 UTC", Body: "Initial report with **markdown** content and a code block:\n\n```go\nfmt.Println(\"hello\")\n```"},
+		},
+	}, nil
+}

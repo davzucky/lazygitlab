@@ -29,6 +29,23 @@ type IssueDetails struct {
 	Description string
 }
 
+type IssueComment struct {
+	Author    string
+	CreatedAt string
+	Body      string
+}
+
+type IssueActivity struct {
+	Actor     string
+	CreatedAt string
+	Action    string
+}
+
+type IssueDetailData struct {
+	Comments   []IssueComment
+	Activities []IssueActivity
+}
+
 type IssueState string
 
 const (
@@ -52,6 +69,7 @@ type IssueResult struct {
 type DataProvider interface {
 	LoadIssues(ctx context.Context, query IssueQuery) (IssueResult, error)
 	LoadMergeRequests(ctx context.Context) ([]ListItem, error)
+	LoadIssueDetailData(ctx context.Context, issueIID int64) (IssueDetailData, error)
 }
 
 type DashboardContext struct {

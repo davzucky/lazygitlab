@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -19,6 +20,21 @@ type loadedMsg struct {
 	replace     bool
 	hasNextPage bool
 }
+
+type issueDetailLoadedMsg struct {
+	issueIID  int64
+	data      IssueDetailData
+	err       error
+	requestID int
+}
+
+type issueDetailTab int
+
+const (
+	issueDetailTabOverview issueDetailTab = iota
+	issueDetailTabActivities
+	issueDetailTabComments
+)
 
 type DashboardModel struct {
 	provider     DataProvider
@@ -41,6 +57,10 @@ type DashboardModel struct {
 	issueHasNext bool
 	issueDetail  bool
 	detailScroll int
+	detailTab    issueDetailTab
+	detailData   map[int64]IssueDetailData
+	detailLoad   bool
+	detailErr    string
 	loadingMore  bool
 	requestSeq   int
 	requestID    int
@@ -68,6 +88,7 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		spinner:     sp,
 		searchInput: search,
 		issueState:  IssueStateOpened,
+		detailData:  make(map[int64]IssueDetailData),
 		requestSeq:  1,
 		requestID:   1,
 	}
@@ -123,7 +144,27 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.hasIssueDetailsSelection() {
 			m.issueDetail = false
 			m.detailScroll = 0
+			m.detailTab = issueDetailTabOverview
+			m.detailLoad = false
+			m.detailErr = ""
 		}
+		return m, nil
+
+	case issueDetailLoadedMsg:
+		if msg.requestID != m.requestID || !m.issueDetail {
+			return m, nil
+		}
+		item, ok := m.selectedIssueItem()
+		if !ok || item.Issue == nil || item.Issue.IID != msg.issueIID {
+			return m, nil
+		}
+		m.detailLoad = false
+		if msg.err != nil {
+			m.detailErr = msg.err.Error()
+			return m, nil
+		}
+		m.detailErr = ""
+		m.detailData[msg.issueIID] = msg.data
 		return m, nil
 
 	case tea.KeyMsg:
@@ -171,6 +212,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.issueDetail = false
 				m.detailScroll = 0
+				m.detailTab = issueDetailTabOverview
+				m.detailLoad = false
+				m.detailErr = ""
 				return m, nil
 			case "q", "ctrl+c":
 				return m, tea.Quit
@@ -189,6 +233,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "?":
 				m.showHelp = true
 				return m, nil
+			case "tab", "l", "right":
+				m.detailTab = nextIssueDetailTab(m.detailTab)
+				m.detailScroll = 0
+				return m, m.loadIssueDetailDataCmd()
+			case "shift+tab", "h", "left":
+				m.detailTab = prevIssueDetailTab(m.detailTab)
+				m.detailScroll = 0
+				return m, m.loadIssueDetailDataCmd()
 			}
 			return m, nil
 		}
@@ -200,7 +252,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.view == IssuesView && m.hasIssueDetailsSelection() {
 				m.issueDetail = true
 				m.detailScroll = 0
-				return m, nil
+				m.detailTab = issueDetailTabOverview
+				m.detailErr = ""
+				return m, m.loadIssueDetailDataCmd()
 			}
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
@@ -405,7 +459,12 @@ func (m DashboardModel) renderMain(width int, height int) string {
 
 func (m DashboardModel) renderIssueDetailFullscreen(width int, height int) string {
 	contentWidth := max(10, width-6)
-	lines := []string{m.styles.header.Render("Issue Detail"), m.styles.dim.Render("Esc to return • j/k to scroll"), ""}
+	lines := []string{
+		m.styles.header.Render("Issue Detail"),
+		m.styles.dim.Render("Esc to return • j/k scroll • tab shift+tab switch tabs"),
+		m.renderIssueDetailTabs(contentWidth),
+		"",
+	}
 	detailLines := m.issueDetailLines(contentWidth)
 	if len(detailLines) == 0 {
 		lines = append(lines, m.styles.dim.Render("No issue details available"))
@@ -464,6 +523,7 @@ Actions:
   1,2                 Jump to view
   enter               Open issue detail panel
   esc                 Close issue detail panel
+  tab/shift+tab       Cycle issue detail tabs
   [,] or o/c/a        Issue state tabs
   /                   Search issues
   r                   Retry after error
@@ -478,6 +538,9 @@ func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.loadingMore = false
 	m.issueDetail = false
 	m.detailScroll = 0
+	m.detailTab = issueDetailTabOverview
+	m.detailLoad = false
+	m.detailErr = ""
 	m.requestSeq++
 	m.requestID = m.requestSeq
 	if m.view == IssuesView {
@@ -507,6 +570,13 @@ func (m DashboardModel) hasIssueDetailsSelection() bool {
 	return m.items[m.selected].Issue != nil
 }
 
+func (m DashboardModel) selectedIssueItem() (ListItem, bool) {
+	if !m.hasIssueDetailsSelection() {
+		return ListItem{}, false
+	}
+	return m.items[m.selected], true
+}
+
 func (m DashboardModel) clampDetailScroll(next int) int {
 	contentWidth, bodyRows := m.issueDetailViewport()
 	lines := m.issueDetailLines(contentWidth)
@@ -521,13 +591,22 @@ func (m DashboardModel) clampDetailScroll(next int) int {
 }
 
 func (m DashboardModel) issueDetailLines(width int) []string {
-	if !m.hasIssueDetailsSelection() {
+	item, ok := m.selectedIssueItem()
+	if !ok {
 		return nil
 	}
-	item := m.items[m.selected]
 	details := item.Issue
 	if details == nil {
 		return nil
+	}
+
+	if m.detailTab != issueDetailTabOverview {
+		if m.detailLoad {
+			return wrapLines([]string{"Loading issue detail data..."}, width)
+		}
+		if m.detailErr != "" {
+			return wrapLines([]string{fmt.Sprintf("Failed to load issue detail data: %s", m.detailErr)}, width)
+		}
 	}
 
 	author := fallbackValue(details.Author, "-")
@@ -542,7 +621,7 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 		iid = fmt.Sprintf("#%d", details.IID)
 	}
 
-	lines := []string{
+	metadata := []string{
 		fmt.Sprintf("Title: %s", fallbackValue(item.Title, "-")),
 		fmt.Sprintf("IID: %s", iid),
 		fmt.Sprintf("State: %s", state),
@@ -552,9 +631,17 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 		fmt.Sprintf("Created: %s", createdAt),
 		fmt.Sprintf("Updated: %s", updatedAt),
 		fmt.Sprintf("URL: %s", url),
-		"",
-		"Description:",
 	}
+
+	switch m.detailTab {
+	case issueDetailTabActivities:
+		return m.issueActivityLines(width, details.IID)
+	case issueDetailTabComments:
+		return m.issueCommentLines(width, details.IID)
+	}
+
+	lines := append([]string{"Info:"}, metadata...)
+	lines = append(lines, "", "Description:")
 
 	description := strings.TrimSpace(details.Description)
 	if description == "" {
@@ -563,8 +650,142 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 	}
 
 	wrappedMeta := wrapLines(lines, width)
-	wrappedDescription := wrapParagraphs(description, width)
+	wrappedDescription := renderMarkdownParagraphs(description, width)
 	return append(wrappedMeta, wrappedDescription...)
+}
+
+func (m DashboardModel) issueCommentLines(width int, issueIID int64) []string {
+	data, ok := m.detailData[issueIID]
+	if !ok || len(data.Comments) == 0 {
+		return wrapLines([]string{"No comments available."}, width)
+	}
+
+	lines := make([]string, 0, len(data.Comments)*6)
+	for i, comment := range data.Comments {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		header := fmt.Sprintf("%s • %s", fallbackValue(comment.Author, "-"), fallbackValue(comment.CreatedAt, "-"))
+		lines = append(lines, wrapLine(header, width)...)
+		body := strings.TrimSpace(comment.Body)
+		if body == "" {
+			lines = append(lines, m.styles.dim.Render("(empty comment)"))
+			continue
+		}
+		lines = append(lines, renderMarkdownParagraphs(body, width)...)
+	}
+	return lines
+}
+
+func (m DashboardModel) issueActivityLines(width int, issueIID int64) []string {
+	data, ok := m.detailData[issueIID]
+	if !ok || len(data.Activities) == 0 {
+		return wrapLines([]string{"No activities available."}, width)
+	}
+
+	lines := make([]string, 0, len(data.Activities))
+	for _, activity := range data.Activities {
+		line := fmt.Sprintf("%s • %s • %s", fallbackValue(activity.CreatedAt, "-"), fallbackValue(activity.Actor, "-"), fallbackValue(activity.Action, "-"))
+		lines = append(lines, line)
+	}
+	return wrapLines(lines, width)
+}
+
+func (m DashboardModel) renderIssueDetailTabs(width int) string {
+	tabs := []issueDetailTab{issueDetailTabOverview, issueDetailTabActivities, issueDetailTabComments}
+	parts := make([]string, 0, len(tabs))
+	for _, tab := range tabs {
+		label := issueDetailTabLabel(tab)
+		if tab == m.detailTab {
+			parts = append(parts, m.styles.selectedRow.Render("["+label+"]"))
+			continue
+		}
+		parts = append(parts, m.styles.dim.Render(label))
+	}
+	return fitLine(strings.Join(parts, "  "), width)
+}
+
+func renderMarkdownParagraphs(input string, width int) []string {
+	content := strings.TrimSpace(strings.ReplaceAll(input, "\r\n", "\n"))
+	if content == "" {
+		return []string{""}
+	}
+
+	rendered, err := renderMarkdown(content, width)
+	if err != nil {
+		return wrapParagraphs(content, width)
+	}
+
+	return strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+}
+
+func renderMarkdown(input string, width int) (string, error) {
+	renderWidth := max(20, width)
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(renderWidth),
+	)
+	if err != nil {
+		return "", err
+	}
+	return renderer.Render(input)
+}
+
+func (m DashboardModel) loadIssueDetailDataCmd() tea.Cmd {
+	item, ok := m.selectedIssueItem()
+	if !ok || item.Issue == nil || item.Issue.IID <= 0 {
+		m.detailLoad = false
+		m.detailErr = ""
+		return nil
+	}
+	if _, exists := m.detailData[item.Issue.IID]; exists {
+		m.detailLoad = false
+		m.detailErr = ""
+		return nil
+	}
+
+	m.detailLoad = true
+	m.detailErr = ""
+	requestID := m.requestID
+	issueIID := item.Issue.IID
+	provider := m.provider
+	return func() tea.Msg {
+		data, err := provider.LoadIssueDetailData(context.Background(), issueIID)
+		return issueDetailLoadedMsg{issueIID: issueIID, data: data, err: err, requestID: requestID}
+	}
+}
+
+func issueDetailTabLabel(tab issueDetailTab) string {
+	switch tab {
+	case issueDetailTabActivities:
+		return "Activities"
+	case issueDetailTabComments:
+		return "Comments"
+	default:
+		return "Detail"
+	}
+}
+
+func nextIssueDetailTab(tab issueDetailTab) issueDetailTab {
+	switch tab {
+	case issueDetailTabOverview:
+		return issueDetailTabActivities
+	case issueDetailTabActivities:
+		return issueDetailTabComments
+	default:
+		return issueDetailTabOverview
+	}
+}
+
+func prevIssueDetailTab(tab issueDetailTab) issueDetailTab {
+	switch tab {
+	case issueDetailTabOverview:
+		return issueDetailTabComments
+	case issueDetailTabActivities:
+		return issueDetailTabOverview
+	default:
+		return issueDetailTabActivities
+	}
 }
 
 func wrapLines(lines []string, width int) []string {
@@ -651,9 +872,9 @@ func fallbackValue(value string, fallback string) string {
 
 func (m DashboardModel) issueDetailViewport() (int, int) {
 	totalWidth := max(60, m.width-2)
-	contentHeight := max(8, m.height-5)
+	contentHeight := max(8, m.height-3)
 	contentWidth := max(10, totalWidth-m.styles.panel.GetHorizontalFrameSize()-2)
-	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-3)
+	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-4)
 	return contentWidth, bodyRows
 }
 
