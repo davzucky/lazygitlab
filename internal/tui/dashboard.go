@@ -36,8 +36,9 @@ const (
 	issueDetailTabOverview issueDetailTab = iota
 	issueDetailTabActivities
 	issueDetailTabComments
-	maxMarkdownRenderChars = 12000
 )
+
+const maxMarkdownRenderChars = 12000
 
 type DashboardModel struct {
 	provider     DataProvider
@@ -243,11 +244,21 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "tab", "l", "right":
 				m.detailTab = nextIssueDetailTab(m.detailTab)
 				m.detailScroll = 0
-				return m, m.loadIssueDetailDataCmd()
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			case "shift+tab", "h", "left":
 				m.detailTab = prevIssueDetailTab(m.detailTab)
 				m.detailScroll = 0
-				return m, m.loadIssueDetailDataCmd()
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			case "d":
 				m.detailTab = issueDetailTabOverview
 				m.detailScroll = 0
@@ -255,11 +266,21 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "a":
 				m.detailTab = issueDetailTabActivities
 				m.detailScroll = 0
-				return m, m.loadIssueDetailDataCmd()
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			case "c":
 				m.detailTab = issueDetailTabComments
 				m.detailScroll = 0
-				return m, m.loadIssueDetailDataCmd()
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			}
 			return m, nil
 		}
@@ -273,7 +294,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailScroll = 0
 				m.detailTab = issueDetailTabOverview
 				m.detailErr = ""
-				return m, m.loadIssueDetailDataCmd()
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			}
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
@@ -600,7 +626,9 @@ func (m DashboardModel) selectedIssueItem() (ListItem, bool) {
 }
 
 func (m DashboardModel) clearDetailCache() {
-	m.detailCache = make(map[string][]string)
+	for key := range m.detailCache {
+		delete(m.detailCache, key)
+	}
 }
 
 func (m DashboardModel) invalidateDetailCacheForIssue(issueIID int64) {
@@ -737,7 +765,7 @@ func (m DashboardModel) issueActivityLines(width int, issueIID int64) []string {
 	return wrapLines(lines, width)
 }
 
-func (m DashboardModel) renderIssueDetailTabs(width int) string {
+func (m DashboardModel) renderIssueDetailTabs(_ int) string {
 	tabs := []issueDetailTab{issueDetailTabOverview, issueDetailTabActivities, issueDetailTabComments}
 	parts := make([]string, 0, len(tabs))
 	for _, tab := range tabs {
@@ -747,11 +775,11 @@ func (m DashboardModel) renderIssueDetailTabs(width int) string {
 			mnemonic := string(runes[0])
 			rest := string(runes[1:])
 			if tab == m.detailTab {
-				letter := m.styles.selectedRow.Copy().Underline(true).Render(mnemonic)
+				letter := m.styles.selectedRow.Underline(true).Render(mnemonic)
 				parts = append(parts, m.styles.selectedRow.Render(letter+rest))
 				continue
 			}
-			letter := m.styles.dim.Copy().Underline(true).Render(mnemonic)
+			letter := m.styles.dim.Underline(true).Render(mnemonic)
 			parts = append(parts, m.styles.dim.Render(letter+rest))
 			continue
 		}
@@ -761,11 +789,7 @@ func (m DashboardModel) renderIssueDetailTabs(width int) string {
 		}
 		parts = append(parts, m.styles.dim.Render(label))
 	}
-	line := strings.Join(parts, "  ")
-	if lipgloss.Width(line) <= width {
-		return line
-	}
-	return line
+	return strings.Join(parts, "  ")
 }
 
 func withVerticalScroll(lines []string, width int, start int, rows int, total int) []string {
@@ -875,21 +899,14 @@ func renderMarkdown(input string, width int) (string, error) {
 func (m DashboardModel) loadIssueDetailDataCmd() tea.Cmd {
 	item, ok := m.selectedIssueItem()
 	if !ok || item.Issue == nil || item.Issue.IID <= 0 {
-		m.detailLoad = false
-		m.detailErr = ""
 		return nil
 	}
 	if _, exists := m.detailData[item.Issue.IID]; exists {
-		m.detailLoad = false
-		m.detailErr = ""
 		return nil
 	}
 	if m.detailLoad {
 		return nil
 	}
-
-	m.detailLoad = true
-	m.detailErr = ""
 	requestID := m.requestID
 	issueIID := item.Issue.IID
 	provider := m.provider

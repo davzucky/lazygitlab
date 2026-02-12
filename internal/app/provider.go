@@ -131,11 +131,11 @@ func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui
 
 	notes, err := p.client.ListIssueNotes(ctx, p.projectPath, issueIID)
 	if err != nil {
-		return tui.IssueDetailData{}, err
+		return tui.IssueDetailData{}, fmt.Errorf("load issue notes: %w", err)
 	}
 	stateEvents, err := p.client.ListIssueStateEvents(ctx, p.projectPath, issueIID)
 	if err != nil {
-		return tui.IssueDetailData{}, err
+		return tui.IssueDetailData{}, fmt.Errorf("load issue state events: %w", err)
 	}
 
 	comments := make([]tui.IssueComment, 0, len(notes))
