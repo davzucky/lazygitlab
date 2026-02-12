@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"strings"
 	"time"
@@ -28,6 +29,11 @@ type issueDetailLoadedMsg struct {
 	data      IssueDetailData
 	err       error
 	requestID int
+}
+
+type markdownRenderedMsg struct {
+	cacheKey string
+	lines    []string
 }
 
 type issueDetailTab int
@@ -64,6 +70,7 @@ type DashboardModel struct {
 	detailTab    issueDetailTab
 	detailData   map[int64]IssueDetailData
 	detailCache  map[string][]string
+	markdownBody map[string][]string
 	detailLoad   bool
 	detailErr    string
 	loadingMore  bool
@@ -83,20 +90,21 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 	search.Width = 30
 
 	return DashboardModel{
-		provider:    provider,
-		ctx:         ctx,
-		styles:      newStyles(),
-		view:        IssuesView,
-		width:       100,
-		height:      40,
-		loading:     true,
-		spinner:     sp,
-		searchInput: search,
-		issueState:  IssueStateOpened,
-		detailData:  make(map[int64]IssueDetailData),
-		detailCache: make(map[string][]string),
-		requestSeq:  1,
-		requestID:   1,
+		provider:     provider,
+		ctx:          ctx,
+		styles:       newStyles(),
+		view:         IssuesView,
+		width:        100,
+		height:       40,
+		loading:      true,
+		spinner:      sp,
+		searchInput:  search,
+		issueState:   IssueStateOpened,
+		detailData:   make(map[int64]IssueDetailData),
+		detailCache:  make(map[string][]string),
+		markdownBody: make(map[string][]string),
+		requestSeq:   1,
+		requestID:    1,
 	}
 }
 
@@ -173,6 +181,14 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailErr = ""
 		m.detailData[msg.issueIID] = msg.data
 		m.invalidateDetailCacheForIssue(msg.issueIID)
+		return m, m.preloadMarkdownCmd()
+
+	case markdownRenderedMsg:
+		if msg.cacheKey == "" || len(msg.lines) == 0 {
+			return m, nil
+		}
+		m.markdownBody[msg.cacheKey] = msg.lines
+		m.clearDetailCache()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -241,6 +257,19 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "?":
 				m.showHelp = true
 				return m, nil
+			case "r":
+				item, ok := m.selectedIssueItem()
+				if ok && item.Issue != nil {
+					delete(m.detailData, item.Issue.IID)
+					m.invalidateMarkdownCacheForIssue(item.Issue.IID)
+					m.clearDetailCache()
+				}
+				cmd := m.loadIssueDetailDataCmd()
+				if cmd != nil {
+					m.detailLoad = true
+					m.detailErr = ""
+				}
+				return m, cmd
 			case "tab", "l", "right":
 				m.detailTab = nextIssueDetailTab(m.detailTab)
 				m.detailScroll = 0
@@ -249,7 +278,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailLoad = true
 					m.detailErr = ""
 				}
-				return m, cmd
+				return m, tea.Batch(cmd, m.preloadMarkdownCmd())
 			case "shift+tab", "h", "left":
 				m.detailTab = prevIssueDetailTab(m.detailTab)
 				m.detailScroll = 0
@@ -258,11 +287,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailLoad = true
 					m.detailErr = ""
 				}
-				return m, cmd
+				return m, tea.Batch(cmd, m.preloadMarkdownCmd())
 			case "d":
 				m.detailTab = issueDetailTabOverview
 				m.detailScroll = 0
-				return m, nil
+				return m, m.preloadMarkdownCmd()
 			case "a":
 				m.detailTab = issueDetailTabActivities
 				m.detailScroll = 0
@@ -271,7 +300,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailLoad = true
 					m.detailErr = ""
 				}
-				return m, cmd
+				return m, tea.Batch(cmd, m.preloadMarkdownCmd())
 			case "c":
 				m.detailTab = issueDetailTabComments
 				m.detailScroll = 0
@@ -280,7 +309,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailLoad = true
 					m.detailErr = ""
 				}
-				return m, cmd
+				return m, tea.Batch(cmd, m.preloadMarkdownCmd())
 			}
 			return m, nil
 		}
@@ -299,7 +328,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailLoad = true
 					m.detailErr = ""
 				}
-				return m, cmd
+				return m, tea.Batch(cmd, m.preloadMarkdownCmd())
 			}
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
@@ -573,7 +602,7 @@ Actions:
   d/a/c               Jump Detail/Activities/Comments
   [,] or o/c/a        Issue state tabs
   /                   Search issues
-  r                   Retry after error
+  r                   Retry load (errors)
   q                   Quit
   ?                   Toggle help
 `
@@ -640,6 +669,15 @@ func (m DashboardModel) invalidateDetailCacheForIssue(issueIID int64) {
 	}
 }
 
+func (m DashboardModel) invalidateMarkdownCacheForIssue(issueIID int64) {
+	prefix := fmt.Sprintf("%d:", issueIID)
+	for key := range m.markdownBody {
+		if strings.HasPrefix(key, prefix) {
+			delete(m.markdownBody, key)
+		}
+	}
+}
+
 func (m DashboardModel) clampDetailScroll(next int) int {
 	contentWidth, bodyRows := m.issueDetailViewport()
 	lines := m.issueDetailLines(contentWidth)
@@ -673,7 +711,10 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 			return wrapLines([]string{"Loading issue detail data..."}, width)
 		}
 		if m.detailErr != "" {
-			return wrapLines([]string{fmt.Sprintf("Failed to load issue detail data: %s", m.detailErr)}, width)
+			return wrapLines([]string{
+				fmt.Sprintf("Failed to load issue detail data: %s", m.detailErr),
+				"Press r to retry.",
+			}, width)
 		}
 	}
 
@@ -722,7 +763,7 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 	}
 
 	wrappedMeta := wrapLines(lines, width)
-	wrappedDescription := renderMarkdownParagraphs(description, width)
+	wrappedDescription := m.markdownOrWrapped(details.IID, "description", 0, description, width)
 	computed := append(wrappedMeta, wrappedDescription...)
 	m.detailCache[cacheKey] = computed
 	return computed
@@ -746,9 +787,21 @@ func (m DashboardModel) issueCommentLines(width int, issueIID int64) []string {
 			lines = append(lines, m.styles.dim.Render("(empty comment)"))
 			continue
 		}
-		lines = append(lines, renderMarkdownParagraphs(body, width)...)
+		lines = append(lines, m.markdownOrWrapped(issueIID, "comment", i, body, width)...)
 	}
 	return lines
+}
+
+func (m DashboardModel) markdownOrWrapped(issueIID int64, section string, index int, content string, width int) []string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return []string{""}
+	}
+	key := markdownCacheKey(issueIID, section, index, width, trimmed)
+	if rendered, ok := m.markdownBody[key]; ok {
+		return rendered
+	}
+	return wrapParagraphs(trimmed, width)
 }
 
 func (m DashboardModel) issueActivityLines(width int, issueIID int64) []string {
@@ -851,6 +904,68 @@ func padToWidth(input string, width int) string {
 	return input + strings.Repeat(" ", width-visible)
 }
 
+func (m DashboardModel) preloadMarkdownCmd() tea.Cmd {
+	if !m.issueDetail {
+		return nil
+	}
+	item, ok := m.selectedIssueItem()
+	if !ok || item.Issue == nil {
+		return nil
+	}
+	issueIID := item.Issue.IID
+	width, _ := m.issueDetailViewport()
+	cmds := make([]tea.Cmd, 0, 8)
+
+	if m.detailTab == issueDetailTabOverview {
+		description := strings.TrimSpace(item.Issue.Description)
+		if description != "" {
+			if cmd := m.markdownCmdForContent(issueIID, "description", 0, description, width); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+
+	if m.detailTab == issueDetailTabComments {
+		if data, ok := m.detailData[issueIID]; ok {
+			for i, comment := range data.Comments {
+				body := strings.TrimSpace(comment.Body)
+				if body == "" {
+					continue
+				}
+				if cmd := m.markdownCmdForContent(issueIID, "comment", i, body, width); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
+	}
+
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m DashboardModel) markdownCmdForContent(issueIID int64, section string, index int, content string, width int) tea.Cmd {
+	key := markdownCacheKey(issueIID, section, index, width, content)
+	if _, ok := m.markdownBody[key]; ok {
+		return nil
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		lines := renderMarkdownParagraphs(trimmed, width)
+		return markdownRenderedMsg{cacheKey: key, lines: lines}
+	}
+}
+
+func markdownCacheKey(issueIID int64, section string, index int, width int, content string) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(content))
+	return fmt.Sprintf("%d:%s:%d:%d:%x", issueIID, section, index, width, h.Sum64())
+}
+
 func renderMarkdownParagraphs(input string, width int) []string {
 	content := strings.TrimSpace(strings.ReplaceAll(input, "\r\n", "\n"))
 	if content == "" {
@@ -870,30 +985,14 @@ func renderMarkdownParagraphs(input string, width int) []string {
 
 func renderMarkdown(input string, width int) (string, error) {
 	renderWidth := max(20, width)
-	type markdownResult struct {
-		rendered string
-		err      error
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(renderWidth),
+	)
+	if err != nil {
+		return "", err
 	}
-	resultCh := make(chan markdownResult, 1)
-	go func() {
-		renderer, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(renderWidth),
-		)
-		if err != nil {
-			resultCh <- markdownResult{"", err}
-			return
-		}
-		rendered, err := renderer.Render(input)
-		resultCh <- markdownResult{rendered: rendered, err: err}
-	}()
-
-	select {
-	case result := <-resultCh:
-		return result.rendered, result.err
-	case <-time.After(120 * time.Millisecond):
-		return "", fmt.Errorf("markdown render timeout")
-	}
+	return renderer.Render(input)
 }
 
 func (m DashboardModel) loadIssueDetailDataCmd() tea.Cmd {
