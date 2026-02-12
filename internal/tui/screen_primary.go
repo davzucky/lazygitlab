@@ -33,6 +33,9 @@ func (m DashboardModel) handlePrimaryScreenKey(key string) (tea.Model, tea.Cmd, 
 	case "2":
 		m.primaryIndex = 1
 		return m, nil, true
+	case "3":
+		m.primaryIndex = 1
+		return m, nil, true
 	}
 
 	return m, nil, false

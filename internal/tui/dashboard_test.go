@@ -161,6 +161,21 @@ func TestDashboardShiftTabCyclesBackFromPrimaryToMergeRequest(t *testing.T) {
 	}
 }
 
+func TestDashboardPrimaryThreeSelectsMergeRequestWithoutRouting(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	model := updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+	if model.primaryIndex != 1 {
+		t.Fatalf("primaryIndex = %d want %d", model.primaryIndex, 1)
+	}
+}
+
 func TestDashboardIssueStateTabReloads(t *testing.T) {
 	t.Parallel()
 
