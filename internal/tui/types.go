@@ -5,7 +5,8 @@ import "context"
 type ViewMode int
 
 const (
-	IssuesView ViewMode = iota
+	PrimaryView ViewMode = iota
+	IssuesView
 	MergeRequestsView
 )
 

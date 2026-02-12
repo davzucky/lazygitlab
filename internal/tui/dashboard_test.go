@@ -42,9 +42,137 @@ func TestDashboardViewSwitches(t *testing.T) {
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
 	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
 
 	if model.view != IssuesView {
 		t.Fatalf("view = %v want %v", model.view, IssuesView)
+	}
+}
+
+func TestDashboardStartsOnPrimaryView(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	if m.view != PrimaryView {
+		t.Fatalf("view = %v want %v", m.view, PrimaryView)
+	}
+}
+
+func TestDashboardEscReturnsToPrimaryFromIssues(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
+	if model.view != IssuesView {
+		t.Fatalf("view = %v want %v", model.view, IssuesView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardPrimaryRoutesToMergeRequests(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
+
+	if model.view != MergeRequestsView {
+		t.Fatalf("view = %v want %v", model.view, MergeRequestsView)
+	}
+}
+
+func TestDashboardEscReturnsToPrimaryFromMergeRequests(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
+	if model.view != MergeRequestsView {
+		t.Fatalf("view = %v want %v", model.view, MergeRequestsView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardLeftFromIssuesReturnsPrimary(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model := updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardTabCyclesThroughPrimaryIssueMergeRequest(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model := updated.(DashboardModel)
+	if model.view != IssuesView {
+		t.Fatalf("view after first tab = %v want %v", model.view, IssuesView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.view != MergeRequestsView {
+		t.Fatalf("view after second tab = %v want %v", model.view, MergeRequestsView)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view after third tab = %v want %v", model.view, PrimaryView)
+	}
+}
+
+func TestDashboardShiftTabCyclesBackFromPrimaryToMergeRequest(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	model := updated.(DashboardModel)
+	if model.view != MergeRequestsView {
+		t.Fatalf("view = %v want %v", model.view, MergeRequestsView)
+	}
+}
+
+func TestDashboardPrimaryThreeSelectsMergeRequestWithoutRouting(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	model := updated.(DashboardModel)
+	if model.view != PrimaryView {
+		t.Fatalf("view = %v want %v", model.view, PrimaryView)
+	}
+	if model.primaryIndex != 1 {
+		t.Fatalf("primaryIndex = %d want %d", model.primaryIndex, 1)
 	}
 }
 
@@ -53,6 +181,7 @@ func TestDashboardIssueStateTabReloads(t *testing.T) {
 
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
@@ -79,6 +208,7 @@ func TestDashboardIssueAllTabReloads(t *testing.T) {
 
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.issueState = IssueStateClosed
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "closed", Description: "first issue"}}}
@@ -106,6 +236,7 @@ func TestDashboardLoadsNextIssuePageNearEnd(t *testing.T) {
 
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{
 		{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}},
@@ -138,6 +269,7 @@ func TestDashboardIssueSearchAppliesOnEnter(t *testing.T) {
 
 	provider := &stubProvider{}
 	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
@@ -170,6 +302,7 @@ func TestDashboardInitialRequestIDAcceptsFirstLoad(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	updated, _ := m.Update(loadedMsg{view: IssuesView, items: []ListItem{{ID: 99, Title: "Loaded", Issue: &IssueDetails{IID: 199, State: "opened", Description: "loaded issue"}}}, requestID: 1, replace: true})
 	model := updated.(DashboardModel)
 	if len(model.items) == 0 {
@@ -181,6 +314,7 @@ func TestDashboardIssueDetailOpensAndCloses(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
@@ -201,6 +335,7 @@ func TestDashboardIssueDetailEnterDoesNotClose(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
@@ -218,6 +353,7 @@ func TestDashboardIssueDetailScrollDoesNotMoveSelection(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.width = 100
 	m.height = 20
@@ -248,6 +384,7 @@ func TestDashboardIssueDetailTabSwitches(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
@@ -274,6 +411,7 @@ func TestDashboardIssueDetailMnemonicTabKeys(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
 	m.loading = false
 	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
 
