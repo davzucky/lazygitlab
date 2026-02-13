@@ -78,11 +78,14 @@ const (
 )
 
 type MergeRequestQuery struct {
-	State MergeRequestState
+	State   MergeRequestState
+	Page    int
+	PerPage int
 }
 
 type MergeRequestResult struct {
-	Items []ListItem
+	Items       []ListItem
+	HasNextPage bool
 }
 
 type MergeRequestDetails struct {

@@ -15,6 +15,7 @@ type issueCall struct {
 
 type mergeRequestCall struct {
 	State MergeRequestState
+	Page  int
 }
 
 type stubProvider struct {
@@ -31,9 +32,27 @@ func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueRes
 }
 
 func (s *stubProvider) LoadMergeRequests(_ context.Context, query MergeRequestQuery) (MergeRequestResult, error) {
-	s.mergeRequestCalls = append(s.mergeRequestCalls, mergeRequestCall{State: query.State})
+	s.mergeRequestCalls = append(s.mergeRequestCalls, mergeRequestCall{State: query.State, Page: query.Page})
 	if query.State == "" {
 		query.State = MergeRequestStateOpened
+	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.Page == 2 {
+		return MergeRequestResult{Items: []ListItem{{
+			ID:       22,
+			Title:    "MR two",
+			Subtitle: "!202 • " + string(query.State),
+			MergeRequest: &MergeRequestDetails{
+				IID:          202,
+				State:        string(query.State),
+				Author:       "bob",
+				SourceBranch: "feature/test-2",
+				TargetBranch: "main",
+				Description:  "second mr",
+			},
+		}}, HasNextPage: false}, nil
 	}
 	return MergeRequestResult{Items: []ListItem{{
 		ID:       21,
@@ -47,7 +66,7 @@ func (s *stubProvider) LoadMergeRequests(_ context.Context, query MergeRequestQu
 			TargetBranch: "main",
 			Description:  "first mr",
 		},
-	}}}, nil
+	}}, HasNextPage: true}, nil
 }
 
 func (s *stubProvider) LoadIssueDetailData(context.Context, int64) (IssueDetailData, error) {
@@ -371,6 +390,39 @@ func TestDashboardMergeRequestAllTabReloads(t *testing.T) {
 	}
 	if provider.mergeRequestCalls[0].State != MergeRequestStateAll {
 		t.Fatalf("call state = %v want %v", provider.mergeRequestCalls[0].State, MergeRequestStateAll)
+	}
+}
+
+func TestDashboardLoadsNextMergeRequestPageNearEnd(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = MergeRequestsView
+	m.loading = false
+	m.items = []ListItem{
+		{ID: 21, Title: "MR one", MergeRequest: &MergeRequestDetails{IID: 201, State: "opened", Description: "first mr"}},
+		{ID: 23, Title: "MR three", MergeRequest: &MergeRequestDetails{IID: 203, State: "opened", Description: "third mr"}},
+	}
+	m.selected = 0
+	m.mergeRequestPage = 1
+	m.mergeRequestHasNext = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	model := updated.(DashboardModel)
+	if model.selected != 1 {
+		t.Fatalf("selected = %d want %d", model.selected, 1)
+	}
+	if cmd == nil {
+		t.Fatal("expected next-page load command")
+	}
+
+	_ = cmd()
+	if len(provider.mergeRequestCalls) == 0 {
+		t.Fatal("expected merge request load call")
+	}
+	if provider.mergeRequestCalls[0].Page != 2 {
+		t.Fatalf("call page = %d want %d", provider.mergeRequestCalls[0].Page, 2)
 	}
 }
 

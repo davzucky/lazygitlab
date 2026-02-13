@@ -105,8 +105,18 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 	if strings.TrimSpace(state) == "" {
 		state = string(tui.MergeRequestStateOpened)
 	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PerPage <= 0 {
+		query.PerPage = 25
+	}
 
-	mrs, err := p.client.ListMergeRequests(ctx, p.projectPath, state)
+	mrs, hasNextPage, err := p.client.ListMergeRequests(ctx, p.projectPath, gitlab.MergeRequestListOptions{
+		State:   state,
+		Page:    int64(query.Page),
+		PerPage: query.PerPage,
+	})
 	if err != nil {
 		return tui.MergeRequestResult{}, err
 	}
@@ -137,7 +147,7 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 		})
 	}
 
-	return tui.MergeRequestResult{Items: items}, nil
+	return tui.MergeRequestResult{Items: items, HasNextPage: hasNextPage}, nil
 }
 
 func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui.IssueDetailData, error) {

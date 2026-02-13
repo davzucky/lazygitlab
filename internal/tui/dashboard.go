@@ -67,6 +67,8 @@ type DashboardModel struct {
 	issueSearch              string
 	issuePage                int
 	issueHasNext             bool
+	mergeRequestPage         int
+	mergeRequestHasNext      bool
 	issueDetail              bool
 	mergeRequestDetail       bool
 	detailScroll             int
@@ -110,6 +112,8 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		markdownBody:      make(map[string][]string),
 		requestSeq:        1,
 		requestID:         1,
+		issuePage:         1,
+		mergeRequestPage:  1,
 	}
 }
 
@@ -156,6 +160,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.issuePage = 1
 			} else {
 				m.issuePage++
+			}
+		} else if m.view == MergeRequestsView {
+			m.mergeRequestHasNext = msg.hasNextPage
+			if msg.replace {
+				m.mergeRequestPage = 1
+			} else {
+				m.mergeRequestPage++
 			}
 		}
 		if m.selected >= len(m.items) {
@@ -386,8 +397,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
 				m.selected++
-				if m.shouldLoadMoreIssues() {
-					return m.startLoadMoreIssues()
+				if m.shouldLoadMoreIssues() || m.shouldLoadMoreMergeRequests() {
+					return m.startLoadMoreCurrentView()
 				}
 			}
 		case "k", "up":
@@ -567,7 +578,7 @@ func (m DashboardModel) renderMain(width int, height int) string {
 			footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
 			lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
 		}
-		if m.view == IssuesView && m.loadingMore {
+		if (m.view == IssuesView || m.view == MergeRequestsView) && m.loadingMore {
 			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
 		}
 	}
@@ -631,6 +642,9 @@ func (m DashboardModel) renderStatusBar(width int) string {
 		}
 	} else if m.view == MergeRequestsView {
 		status += fmt.Sprintf(" | merge requests: %s", mergeRequestStateLabel(m.mergeRequestState))
+		if m.loadingMore {
+			status += " | loading more"
+		}
 	}
 	innerWidth := max(1, width-m.styles.status.GetHorizontalFrameSize())
 	return m.styles.status.Width(innerWidth).Render(fitLine(status, innerWidth))
@@ -690,18 +704,34 @@ func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.requestID = m.requestSeq
 	if m.view == IssuesView {
 		m.issuePage = 1
+		m.issueHasNext = false
 	}
-	return m, m.loadCurrentViewCmd(m.requestID, true, m.issuePage)
+	if m.view == MergeRequestsView {
+		m.mergeRequestPage = 1
+		m.mergeRequestHasNext = false
+	}
+	return m, m.loadCurrentViewCmd(m.requestID, true, 1)
 }
 
-func (m DashboardModel) startLoadMoreIssues() (tea.Model, tea.Cmd) {
-	if !m.shouldLoadMoreIssues() {
+func (m DashboardModel) startLoadMoreCurrentView() (tea.Model, tea.Cmd) {
+	if m.view == IssuesView && !m.shouldLoadMoreIssues() {
+		return m, nil
+	}
+	if m.view == MergeRequestsView && !m.shouldLoadMoreMergeRequests() {
+		return m, nil
+	}
+	if m.view != IssuesView && m.view != MergeRequestsView {
 		return m, nil
 	}
 	m.loadingMore = true
 	m.requestSeq++
 	m.requestID = m.requestSeq
-	nextPage := m.issuePage + 1
+	nextPage := 2
+	if m.view == IssuesView {
+		nextPage = m.issuePage + 1
+	} else {
+		nextPage = m.mergeRequestPage + 1
+	}
 	return m, m.loadCurrentViewCmd(m.requestID, false, nextPage)
 }
 
@@ -1368,7 +1398,7 @@ func padOrTrimRight(input string, width int) string {
 	return string(runes) + strings.Repeat(" ", width-len(runes))
 }
 
-func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPage int) tea.Cmd {
+func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, page int) tea.Cmd {
 	view := m.view
 	provider := m.provider
 	issueState := m.issueState
@@ -1389,16 +1419,17 @@ func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPa
 			result, issueErr := provider.LoadIssues(ctx, IssueQuery{
 				State:   issueState,
 				Search:  issueSearch,
-				Page:    issuesPage,
+				Page:    page,
 				PerPage: 25,
 			})
 			err = issueErr
 			items = result.Items
 			hasNextPage = result.HasNextPage
 		case MergeRequestsView:
-			result, mergeRequestErr := provider.LoadMergeRequests(ctx, MergeRequestQuery{State: mergeRequestState})
+			result, mergeRequestErr := provider.LoadMergeRequests(ctx, MergeRequestQuery{State: mergeRequestState, Page: page, PerPage: 25})
 			err = mergeRequestErr
 			items = result.Items
+			hasNextPage = result.HasNextPage
 		}
 
 		return loadedMsg{view: view, items: items, err: err, requestID: requestID, replace: replace, hasNextPage: hasNextPage}
@@ -1420,6 +1451,16 @@ func (m DashboardModel) viewTitle() string {
 
 func (m DashboardModel) shouldLoadMoreIssues() bool {
 	if m.view != IssuesView || m.loading || m.loadingMore || !m.issueHasNext {
+		return false
+	}
+	if len(m.items) == 0 {
+		return false
+	}
+	return m.selected >= len(m.items)-2
+}
+
+func (m DashboardModel) shouldLoadMoreMergeRequests() bool {
+	if m.view != MergeRequestsView || m.loading || m.loadingMore || !m.mergeRequestHasNext {
 		return false
 	}
 	if len(m.items) == 0 {

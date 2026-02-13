@@ -89,6 +89,12 @@ func (p *MockProvider) LoadMergeRequests(_ context.Context, query tui.MergeReque
 	if state == "" {
 		state = tui.MergeRequestStateOpened
 	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PerPage <= 0 {
+		query.PerPage = 25
+	}
 
 	items := make([]tui.ListItem, 0, 20)
 	for i := 20; i >= 1; i-- {
@@ -130,7 +136,16 @@ func (p *MockProvider) LoadMergeRequests(_ context.Context, query tui.MergeReque
 		})
 	}
 
-	return tui.MergeRequestResult{Items: items}, nil
+	start := (query.Page - 1) * query.PerPage
+	if start >= len(items) {
+		return tui.MergeRequestResult{Items: []tui.ListItem{}, HasNextPage: false}, nil
+	}
+	end := start + query.PerPage
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return tui.MergeRequestResult{Items: items[start:end], HasNextPage: end < len(items)}, nil
 }
 
 func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (tui.IssueDetailData, error) {
