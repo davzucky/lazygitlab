@@ -786,7 +786,7 @@ func (m DashboardModel) mergeRequestDetailViewport() (int, int) {
 	totalWidth := max(60, m.width-2)
 	contentHeight := max(8, m.height-5)
 	contentWidth := max(10, totalWidth-m.styles.panel.GetHorizontalFrameSize()-2)
-	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-4)
+	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-3)
 	return contentWidth, bodyRows
 }
 
