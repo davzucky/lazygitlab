@@ -97,28 +97,47 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 	return tui.IssueResult{Items: items, HasNextPage: hasNextPage}, nil
 }
 
-func (p *Provider) LoadMergeRequests(ctx context.Context) ([]tui.ListItem, error) {
+func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequestQuery) (tui.MergeRequestResult, error) {
 	if p.projectPath == "" {
-		return nil, fmt.Errorf("no project context selected")
+		return tui.MergeRequestResult{}, fmt.Errorf("no project context selected")
+	}
+	state := string(query.State)
+	if strings.TrimSpace(state) == "" {
+		state = string(tui.MergeRequestStateOpened)
 	}
 
-	mrs, err := p.client.ListMergeRequests(ctx, p.projectPath, "opened")
+	mrs, err := p.client.ListMergeRequests(ctx, p.projectPath, state)
 	if err != nil {
-		return nil, err
+		return tui.MergeRequestResult{}, err
 	}
 
 	items := make([]tui.ListItem, 0, len(mrs))
 	for _, mr := range mrs {
 		subtitle := fmt.Sprintf("!%d • %s", mr.IID, mr.State)
+		author := "-"
+		if mr.Author != nil {
+			author = displayName(mr.Author.Name, mr.Author.Username)
+		}
 		items = append(items, tui.ListItem{
 			ID:       mr.ID,
 			Title:    mr.Title,
 			Subtitle: subtitle,
 			URL:      mr.WebURL,
+			MergeRequest: &tui.MergeRequestDetails{
+				IID:          mr.IID,
+				State:        mr.State,
+				Author:       author,
+				SourceBranch: mr.SourceBranch,
+				TargetBranch: mr.TargetBranch,
+				CreatedAt:    formatIssueTime(mr.CreatedAt),
+				UpdatedAt:    formatIssueTime(mr.UpdatedAt),
+				URL:          mr.WebURL,
+				Description:  mr.Description,
+			},
 		})
 	}
 
-	return items, nil
+	return tui.MergeRequestResult{Items: items}, nil
 }
 
 func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui.IssueDetailData, error) {

@@ -84,18 +84,53 @@ func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.
 	return tui.IssueResult{Items: filtered[start:end], HasNextPage: end < len(filtered)}, nil
 }
 
-func (p *MockProvider) LoadMergeRequests(context.Context) ([]tui.ListItem, error) {
+func (p *MockProvider) LoadMergeRequests(_ context.Context, query tui.MergeRequestQuery) (tui.MergeRequestResult, error) {
+	state := query.State
+	if state == "" {
+		state = tui.MergeRequestStateOpened
+	}
+
 	items := make([]tui.ListItem, 0, 20)
 	for i := 20; i >= 1; i-- {
+		mrState := "opened"
+		switch {
+		case i%5 == 0:
+			mrState = "merged"
+		case i%4 == 0:
+			mrState = "closed"
+		}
+		if state == tui.MergeRequestStateOpened && mrState != "opened" {
+			continue
+		}
+		if state == tui.MergeRequestStateMerged && mrState != "merged" {
+			continue
+		}
+		if state == tui.MergeRequestStateClosed && mrState != "closed" {
+			continue
+		}
+
+		iid := int64(6000 + i)
+		url := fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/merge_requests/%d", iid)
 		items = append(items, tui.ListItem{
 			ID:       int64(5000 + i),
 			Title:    fmt.Sprintf("Mock merge request %02d with extended title for rendering checks", i),
-			Subtitle: fmt.Sprintf("!%d • opened", 6000+i),
-			URL:      fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/merge_requests/%d", 6000+i),
+			Subtitle: fmt.Sprintf("!%d • %s", iid, mrState),
+			URL:      url,
+			MergeRequest: &tui.MergeRequestDetails{
+				IID:          iid,
+				State:        mrState,
+				Author:       "Mock Author",
+				SourceBranch: fmt.Sprintf("feature/mock-%02d", i),
+				TargetBranch: "main",
+				CreatedAt:    "2026-01-01 10:00 UTC",
+				UpdatedAt:    "2026-01-02 11:00 UTC",
+				URL:          url,
+				Description:  "Mock merge request description for validating detail rendering and scroll behavior.",
+			},
 		})
 	}
 
-	return items, nil
+	return tui.MergeRequestResult{Items: items}, nil
 }
 
 func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (tui.IssueDetailData, error) {

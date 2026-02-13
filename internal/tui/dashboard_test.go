@@ -13,8 +13,13 @@ type issueCall struct {
 	Page   int
 }
 
+type mergeRequestCall struct {
+	State MergeRequestState
+}
+
 type stubProvider struct {
-	issueCalls []issueCall
+	issueCalls        []issueCall
+	mergeRequestCalls []mergeRequestCall
 }
 
 func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueResult, error) {
@@ -25,8 +30,24 @@ func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueRes
 	return IssueResult{Items: []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}, HasNextPage: true}, nil
 }
 
-func (s *stubProvider) LoadMergeRequests(context.Context) ([]ListItem, error) {
-	return []ListItem{{ID: 21, Title: "MR one"}}, nil
+func (s *stubProvider) LoadMergeRequests(_ context.Context, query MergeRequestQuery) (MergeRequestResult, error) {
+	s.mergeRequestCalls = append(s.mergeRequestCalls, mergeRequestCall{State: query.State})
+	if query.State == "" {
+		query.State = MergeRequestStateOpened
+	}
+	return MergeRequestResult{Items: []ListItem{{
+		ID:       21,
+		Title:    "MR one",
+		Subtitle: "!201 • " + string(query.State),
+		MergeRequest: &MergeRequestDetails{
+			IID:          201,
+			State:        string(query.State),
+			Author:       "alice",
+			SourceBranch: "feature/test",
+			TargetBranch: "main",
+			Description:  "first mr",
+		},
+	}}}, nil
 }
 
 func (s *stubProvider) LoadIssueDetailData(context.Context, int64) (IssueDetailData, error) {
@@ -298,6 +319,61 @@ func TestDashboardIssueSearchAppliesOnEnter(t *testing.T) {
 	}
 }
 
+func TestDashboardMergeRequestStateTabReloads(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = MergeRequestsView
+	m.loading = false
+	m.items = []ListItem{{ID: 21, Title: "MR one", MergeRequest: &MergeRequestDetails{IID: 201, State: "opened", Description: "first mr"}}}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	model := updated.(DashboardModel)
+	if model.mergeRequestState != MergeRequestStateMerged {
+		t.Fatalf("state = %v want %v", model.mergeRequestState, MergeRequestStateMerged)
+	}
+	if cmd == nil {
+		t.Fatal("expected reload command")
+	}
+
+	_ = cmd()
+	if len(provider.mergeRequestCalls) == 0 {
+		t.Fatal("expected merge request load call")
+	}
+	if provider.mergeRequestCalls[0].State != MergeRequestStateMerged {
+		t.Fatalf("call state = %v want %v", provider.mergeRequestCalls[0].State, MergeRequestStateMerged)
+	}
+}
+
+func TestDashboardMergeRequestAllTabReloads(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = MergeRequestsView
+	m.loading = false
+	m.mergeRequestState = MergeRequestStateClosed
+	m.items = []ListItem{{ID: 21, Title: "MR one", MergeRequest: &MergeRequestDetails{IID: 201, State: "closed", Description: "first mr"}}}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	model := updated.(DashboardModel)
+	if model.mergeRequestState != MergeRequestStateAll {
+		t.Fatalf("state = %v want %v", model.mergeRequestState, MergeRequestStateAll)
+	}
+	if cmd == nil {
+		t.Fatal("expected reload command")
+	}
+
+	_ = cmd()
+	if len(provider.mergeRequestCalls) == 0 {
+		t.Fatal("expected merge request load call")
+	}
+	if provider.mergeRequestCalls[0].State != MergeRequestStateAll {
+		t.Fatalf("call state = %v want %v", provider.mergeRequestCalls[0].State, MergeRequestStateAll)
+	}
+}
+
 func TestDashboardInitialRequestIDAcceptsFirstLoad(t *testing.T) {
 	t.Parallel()
 
@@ -434,5 +510,26 @@ func TestDashboardIssueDetailMnemonicTabKeys(t *testing.T) {
 	model = updated.(DashboardModel)
 	if model.detailTab != issueDetailTabOverview {
 		t.Fatalf("detail tab = %v want %v", model.detailTab, issueDetailTabOverview)
+	}
+}
+
+func TestDashboardMergeRequestDetailOpensAndCloses(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = MergeRequestsView
+	m.loading = false
+	m.items = []ListItem{{ID: 21, Title: "MR one", MergeRequest: &MergeRequestDetails{IID: 201, State: "opened", Description: "first mr"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	if !model.mergeRequestDetail {
+		t.Fatal("expected merge request detail view to open")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(DashboardModel)
+	if model.mergeRequestDetail {
+		t.Fatal("expected merge request detail view to close")
 	}
 }
