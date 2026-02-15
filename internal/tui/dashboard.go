@@ -47,36 +47,41 @@ const (
 const maxMarkdownRenderChars = 12000
 
 type DashboardModel struct {
-	provider     DataProvider
-	ctx          DashboardContext
-	styles       styles
-	view         ViewMode
-	primaryIndex int
-	items        []ListItem
-	selected     int
-	width        int
-	height       int
-	loading      bool
-	errorMessage string
-	showHelp     bool
-	spinner      spinner.Model
-	searchInput  textinput.Model
-	searchMode   bool
-	issueState   IssueState
-	issueSearch  string
-	issuePage    int
-	issueHasNext bool
-	issueDetail  bool
-	detailScroll int
-	detailTab    issueDetailTab
-	detailData   map[int64]IssueDetailData
-	detailCache  map[string][]string
-	markdownBody map[string][]string
-	detailLoad   bool
-	detailErr    string
-	loadingMore  bool
-	requestSeq   int
-	requestID    int
+	provider                 DataProvider
+	ctx                      DashboardContext
+	styles                   styles
+	view                     ViewMode
+	primaryIndex             int
+	items                    []ListItem
+	selected                 int
+	width                    int
+	height                   int
+	loading                  bool
+	errorMessage             string
+	showHelp                 bool
+	spinner                  spinner.Model
+	searchInput              textinput.Model
+	searchMode               bool
+	issueState               IssueState
+	mergeRequestState        MergeRequestState
+	issueSearch              string
+	issuePage                int
+	issueHasNext             bool
+	mergeRequestPage         int
+	mergeRequestHasNext      bool
+	issueDetail              bool
+	mergeRequestDetail       bool
+	detailScroll             int
+	mergeRequestDetailScroll int
+	detailTab                issueDetailTab
+	detailData               map[int64]IssueDetailData
+	detailCache              map[string][]string
+	markdownBody             map[string][]string
+	detailLoad               bool
+	detailErr                string
+	loadingMore              bool
+	requestSeq               int
+	requestID                int
 }
 
 func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardModel {
@@ -91,21 +96,24 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 	search.Width = 30
 
 	return DashboardModel{
-		provider:     provider,
-		ctx:          ctx,
-		styles:       newStyles(),
-		view:         PrimaryView,
-		width:        100,
-		height:       40,
-		loading:      false,
-		spinner:      sp,
-		searchInput:  search,
-		issueState:   IssueStateOpened,
-		detailData:   make(map[int64]IssueDetailData),
-		detailCache:  make(map[string][]string),
-		markdownBody: make(map[string][]string),
-		requestSeq:   1,
-		requestID:    1,
+		provider:          provider,
+		ctx:               ctx,
+		styles:            newStyles(),
+		view:              PrimaryView,
+		width:             100,
+		height:            40,
+		loading:           false,
+		spinner:           sp,
+		searchInput:       search,
+		issueState:        IssueStateOpened,
+		mergeRequestState: MergeRequestStateOpened,
+		detailData:        make(map[int64]IssueDetailData),
+		detailCache:       make(map[string][]string),
+		markdownBody:      make(map[string][]string),
+		requestSeq:        1,
+		requestID:         1,
+		issuePage:         1,
+		mergeRequestPage:  1,
 	}
 }
 
@@ -153,6 +161,13 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.issuePage++
 			}
+		} else if m.view == MergeRequestsView {
+			m.mergeRequestHasNext = msg.hasNextPage
+			if msg.replace {
+				m.mergeRequestPage = 1
+			} else {
+				m.mergeRequestPage++
+			}
 		}
 		if m.selected >= len(m.items) {
 			m.selected = 0
@@ -163,6 +178,10 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailTab = issueDetailTabOverview
 			m.detailLoad = false
 			m.detailErr = ""
+		}
+		if !m.hasMergeRequestDetailsSelection() {
+			m.mergeRequestDetail = false
+			m.mergeRequestDetailScroll = 0
 		}
 		return m, nil
 
@@ -318,6 +337,33 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if m.mergeRequestDetail {
+			switch msg.String() {
+			case "esc":
+				m.mergeRequestDetail = false
+				m.mergeRequestDetailScroll = 0
+				return m, nil
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "j", "down":
+				m.mergeRequestDetailScroll = m.clampMergeRequestDetailScroll(m.mergeRequestDetailScroll + 1)
+				return m, nil
+			case "k", "up":
+				m.mergeRequestDetailScroll = m.clampMergeRequestDetailScroll(m.mergeRequestDetailScroll - 1)
+				return m, nil
+			case "pgdown":
+				m.mergeRequestDetailScroll = m.clampMergeRequestDetailScroll(m.mergeRequestDetailScroll + 8)
+				return m, nil
+			case "pgup":
+				m.mergeRequestDetailScroll = m.clampMergeRequestDetailScroll(m.mergeRequestDetailScroll - 8)
+				return m, nil
+			case "?":
+				m.showHelp = true
+				return m, nil
+			}
+			return m, nil
+		}
+
 		if msg.String() == "esc" && m.view != PrimaryView {
 			m.view = PrimaryView
 			m.selected = 0
@@ -325,7 +371,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadingMore = false
 			m.errorMessage = ""
 			m.issueDetail = false
+			m.mergeRequestDetail = false
 			m.detailScroll = 0
+			m.mergeRequestDetailScroll = 0
 			m.detailTab = issueDetailTabOverview
 			m.detailLoad = false
 			m.detailErr = ""
@@ -339,6 +387,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if model, cmd, handled := m.handleIssueScreenKey(msg.String()); handled {
 			return model, cmd
 		}
+		if model, cmd, handled := m.handleMergeRequestScreenKey(msg.String()); handled {
+			return model, cmd
+		}
 
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -346,8 +397,8 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			if m.selected < len(m.items)-1 {
 				m.selected++
-				if m.shouldLoadMoreIssues() {
-					return m.startLoadMoreIssues()
+				if m.shouldLoadMoreIssues() || m.shouldLoadMoreMergeRequests() {
+					return m.startLoadMoreCurrentView()
 				}
 			}
 		case "k", "up":
@@ -437,6 +488,10 @@ func (m DashboardModel) View() string {
 		detail := m.renderIssueDetailFullscreen(totalWidth, contentHeight)
 		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
 	}
+	if m.mergeRequestDetail {
+		detail := m.renderMergeRequestDetailFullscreen(totalWidth, contentHeight)
+		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
+	}
 
 	navWidth := minInt(28, max(22, totalWidth/4))
 	mainWidth := max(36, totalWidth-navWidth)
@@ -492,6 +547,8 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		if m.view == IssuesView {
 			rowWidth = minInt(rowWidth, 52)
 			rowsPerItem = 2
+		} else if m.view == MergeRequestsView {
+			rowsPerItem = 2
 		}
 		visibleItems := max(1, bodyRows/rowsPerItem)
 		start, end := visibleRange(len(m.items), m.selected, visibleItems)
@@ -508,6 +565,12 @@ func (m DashboardModel) renderMain(width int, height int) string {
 			if m.view == IssuesView {
 				meta := "  " + fitLine(issueListMeta(item), rowWidth)
 				lines = append(lines, m.styles.dim.Render(meta))
+			} else if m.view == MergeRequestsView {
+				meta := strings.TrimSpace(item.Subtitle)
+				if meta == "" {
+					meta = "-"
+				}
+				lines = append(lines, m.styles.dim.Render("  "+fitLine(meta, rowWidth)))
 			}
 		}
 
@@ -515,7 +578,7 @@ func (m DashboardModel) renderMain(width int, height int) string {
 			footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
 			lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
 		}
-		if m.view == IssuesView && m.loadingMore {
+		if (m.view == IssuesView || m.view == MergeRequestsView) && m.loadingMore {
 			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
 		}
 	}
@@ -577,6 +640,11 @@ func (m DashboardModel) renderStatusBar(width int) string {
 		if m.loadingMore {
 			status += " | loading more"
 		}
+	} else if m.view == MergeRequestsView {
+		status += fmt.Sprintf(" | merge requests: %s", mergeRequestStateLabel(m.mergeRequestState))
+		if m.loadingMore {
+			status += " | loading more"
+		}
 	}
 	innerWidth := max(1, width-m.styles.status.GetHorizontalFrameSize())
 	return m.styles.status.Width(innerWidth).Render(fitLine(status, innerWidth))
@@ -592,11 +660,12 @@ Navigation:
 
 Actions:
   1,2,3               Jump to view/select
-  enter               Open issue detail panel
+  enter               Open issue or MR details
   esc                 Close detail or return Primary
   tab/shift+tab       Cycle issue detail tabs
   d/a/c               Jump Detail/Activities/Comments
   [,] or o/c/a        Issue state tabs
+  [,] or o/m/c/a      MR state tabs
   /                   Search issues
   r                   Retry load (errors)
   q                   Quit
@@ -612,7 +681,9 @@ func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 		m.items = nil
 		m.errorMessage = ""
 		m.issueDetail = false
+		m.mergeRequestDetail = false
 		m.detailScroll = 0
+		m.mergeRequestDetailScroll = 0
 		m.detailTab = issueDetailTabOverview
 		m.detailLoad = false
 		m.detailErr = ""
@@ -622,7 +693,9 @@ func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.loading = true
 	m.loadingMore = false
 	m.issueDetail = false
+	m.mergeRequestDetail = false
 	m.detailScroll = 0
+	m.mergeRequestDetailScroll = 0
 	m.detailTab = issueDetailTabOverview
 	m.detailLoad = false
 	m.detailErr = ""
@@ -631,18 +704,34 @@ func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
 	m.requestID = m.requestSeq
 	if m.view == IssuesView {
 		m.issuePage = 1
+		m.issueHasNext = false
 	}
-	return m, m.loadCurrentViewCmd(m.requestID, true, m.issuePage)
+	if m.view == MergeRequestsView {
+		m.mergeRequestPage = 1
+		m.mergeRequestHasNext = false
+	}
+	return m, m.loadCurrentViewCmd(m.requestID, true, 1)
 }
 
-func (m DashboardModel) startLoadMoreIssues() (tea.Model, tea.Cmd) {
-	if !m.shouldLoadMoreIssues() {
+func (m DashboardModel) startLoadMoreCurrentView() (tea.Model, tea.Cmd) {
+	if m.view == IssuesView && !m.shouldLoadMoreIssues() {
+		return m, nil
+	}
+	if m.view == MergeRequestsView && !m.shouldLoadMoreMergeRequests() {
+		return m, nil
+	}
+	if m.view != IssuesView && m.view != MergeRequestsView {
 		return m, nil
 	}
 	m.loadingMore = true
 	m.requestSeq++
 	m.requestID = m.requestSeq
-	nextPage := m.issuePage + 1
+	nextPage := 2
+	if m.view == IssuesView {
+		nextPage = m.issuePage + 1
+	} else {
+		nextPage = m.mergeRequestPage + 1
+	}
 	return m, m.loadCurrentViewCmd(m.requestID, false, nextPage)
 }
 
@@ -661,6 +750,121 @@ func (m DashboardModel) selectedIssueItem() (ListItem, bool) {
 		return ListItem{}, false
 	}
 	return m.items[m.selected], true
+}
+
+func (m DashboardModel) hasMergeRequestDetailsSelection() bool {
+	if m.view != MergeRequestsView {
+		return false
+	}
+	if len(m.items) == 0 || m.selected < 0 || m.selected >= len(m.items) {
+		return false
+	}
+	return m.items[m.selected].MergeRequest != nil
+}
+
+func (m DashboardModel) selectedMergeRequestItem() (ListItem, bool) {
+	if !m.hasMergeRequestDetailsSelection() {
+		return ListItem{}, false
+	}
+	return m.items[m.selected], true
+}
+
+func (m DashboardModel) clampMergeRequestDetailScroll(next int) int {
+	contentWidth, bodyRows := m.mergeRequestDetailViewport()
+	lines := m.mergeRequestDetailLines(contentWidth)
+	maxScroll := max(0, len(lines)-bodyRows)
+	if next < 0 {
+		return 0
+	}
+	if next > maxScroll {
+		return maxScroll
+	}
+	return next
+}
+
+func (m DashboardModel) mergeRequestDetailViewport() (int, int) {
+	totalWidth := max(60, m.width-2)
+	contentHeight := max(8, m.height-5)
+	contentWidth := max(10, totalWidth-m.styles.panel.GetHorizontalFrameSize()-2)
+	bodyRows := max(1, contentHeight-m.styles.panel.GetVerticalFrameSize()-3)
+	return contentWidth, bodyRows
+}
+
+func (m DashboardModel) mergeRequestDetailLines(width int) []string {
+	item, ok := m.selectedMergeRequestItem()
+	if !ok {
+		return nil
+	}
+	details := item.MergeRequest
+	if details == nil {
+		return nil
+	}
+
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("!%d", details.IID)
+	}
+
+	lines := []string{
+		"Info:",
+		fmt.Sprintf("Title: %s", fallbackValue(item.Title, "-")),
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
+		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Source: %s", fallbackValue(details.SourceBranch, "-")),
+		fmt.Sprintf("Target: %s", fallbackValue(details.TargetBranch, "-")),
+		fmt.Sprintf("Created: %s", fallbackValue(details.CreatedAt, "-")),
+		fmt.Sprintf("Updated: %s", fallbackValue(details.UpdatedAt, "-")),
+		fmt.Sprintf("URL: %s", fallbackValue(details.URL, "-")),
+		"",
+		"Description:",
+	}
+
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		return wrapLines(append(lines, "No description provided."), width)
+	}
+
+	wrappedMeta := wrapLines(lines, width)
+	wrappedDescription := wrapParagraphs(description, width)
+	return append(wrappedMeta, wrappedDescription...)
+}
+
+func (m DashboardModel) renderMergeRequestDetailFullscreen(width int, height int) string {
+	contentWidth := max(10, width-6)
+	viewportWidth := max(8, contentWidth-2)
+	lines := []string{
+		m.styles.header.Render("Merge Request Detail"),
+		m.styles.dim.Render("Esc return | j/k scroll"),
+		"",
+	}
+	detailLines := m.mergeRequestDetailLines(viewportWidth)
+	if len(detailLines) == 0 {
+		lines = append(lines, m.styles.dim.Render("No merge request details available"))
+		innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+		lines = fitHeight(lines, innerHeight)
+		return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
+	}
+
+	bodyRows := max(1, height-len(lines)-2)
+	maxScroll := max(0, len(detailLines)-bodyRows)
+	start := m.mergeRequestDetailScroll
+	if start > maxScroll {
+		start = maxScroll
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := minInt(len(detailLines), start+bodyRows)
+	lines = append(lines, withVerticalScroll(detailLines[start:end], viewportWidth, start, bodyRows, len(detailLines))...)
+	if len(detailLines) > bodyRows {
+		footer := fmt.Sprintf("%d-%d of %d", start+1, end, len(detailLines))
+		lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
+	}
+
+	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+	lines = fitHeight(lines, innerHeight)
+	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
 }
 
 func (m DashboardModel) clearDetailCache() {
@@ -1194,10 +1398,11 @@ func padOrTrimRight(input string, width int) string {
 	return string(runes) + strings.Repeat(" ", width-len(runes))
 }
 
-func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPage int) tea.Cmd {
+func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, page int) tea.Cmd {
 	view := m.view
 	provider := m.provider
 	issueState := m.issueState
+	mergeRequestState := m.mergeRequestState
 	issueSearch := m.issueSearch
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -1214,14 +1419,17 @@ func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, issuesPa
 			result, issueErr := provider.LoadIssues(ctx, IssueQuery{
 				State:   issueState,
 				Search:  issueSearch,
-				Page:    issuesPage,
+				Page:    page,
 				PerPage: 25,
 			})
 			err = issueErr
 			items = result.Items
 			hasNextPage = result.HasNextPage
 		case MergeRequestsView:
-			items, err = provider.LoadMergeRequests(ctx)
+			result, mergeRequestErr := provider.LoadMergeRequests(ctx, MergeRequestQuery{State: mergeRequestState, Page: page, PerPage: 25})
+			err = mergeRequestErr
+			items = result.Items
+			hasNextPage = result.HasNextPage
 		}
 
 		return loadedMsg{view: view, items: items, err: err, requestID: requestID, replace: replace, hasNextPage: hasNextPage}
@@ -1243,6 +1451,16 @@ func (m DashboardModel) viewTitle() string {
 
 func (m DashboardModel) shouldLoadMoreIssues() bool {
 	if m.view != IssuesView || m.loading || m.loadingMore || !m.issueHasNext {
+		return false
+	}
+	if len(m.items) == 0 {
+		return false
+	}
+	return m.selected >= len(m.items)-2
+}
+
+func (m DashboardModel) shouldLoadMoreMergeRequests() bool {
+	if m.view != MergeRequestsView || m.loading || m.loadingMore || !m.mergeRequestHasNext {
 		return false
 	}
 	if len(m.items) == 0 {
@@ -1284,6 +1502,59 @@ func issueStateLabel(state IssueState) string {
 	default:
 		return "Open"
 	}
+}
+
+func mergeRequestStateLabel(state MergeRequestState) string {
+	switch state {
+	case MergeRequestStateMerged:
+		return "Merged"
+	case MergeRequestStateClosed:
+		return "Closed"
+	case MergeRequestStateAll:
+		return "All"
+	default:
+		return "Open"
+	}
+}
+
+func nextMergeRequestState(current MergeRequestState) MergeRequestState {
+	switch current {
+	case MergeRequestStateOpened:
+		return MergeRequestStateMerged
+	case MergeRequestStateMerged:
+		return MergeRequestStateClosed
+	case MergeRequestStateClosed:
+		return MergeRequestStateAll
+	default:
+		return MergeRequestStateOpened
+	}
+}
+
+func prevMergeRequestState(current MergeRequestState) MergeRequestState {
+	switch current {
+	case MergeRequestStateOpened:
+		return MergeRequestStateAll
+	case MergeRequestStateMerged:
+		return MergeRequestStateOpened
+	case MergeRequestStateClosed:
+		return MergeRequestStateMerged
+	default:
+		return MergeRequestStateClosed
+	}
+}
+
+func (m DashboardModel) renderMergeRequestTabs(width int) string {
+	tabs := []MergeRequestState{MergeRequestStateOpened, MergeRequestStateMerged, MergeRequestStateClosed, MergeRequestStateAll}
+	parts := make([]string, 0, len(tabs))
+	for _, tab := range tabs {
+		label := mergeRequestStateLabel(tab)
+		if tab == m.mergeRequestState {
+			parts = append(parts, m.styles.selectedRow.Render("["+label+"]"))
+			continue
+		}
+		parts = append(parts, m.styles.dim.Render(label))
+	}
+	return fitLine(strings.Join(parts, "  "), width)
 }
 
 func nextIssueState(current IssueState) IssueState {

@@ -11,11 +11,12 @@ const (
 )
 
 type ListItem struct {
-	ID       int64
-	Title    string
-	Subtitle string
-	URL      string
-	Issue    *IssueDetails
+	ID           int64
+	Title        string
+	Subtitle     string
+	URL          string
+	Issue        *IssueDetails
+	MergeRequest *MergeRequestDetails
 }
 
 type IssueDetails struct {
@@ -67,9 +68,41 @@ type IssueResult struct {
 	HasNextPage bool
 }
 
+type MergeRequestState string
+
+const (
+	MergeRequestStateOpened MergeRequestState = "opened"
+	MergeRequestStateMerged MergeRequestState = "merged"
+	MergeRequestStateClosed MergeRequestState = "closed"
+	MergeRequestStateAll    MergeRequestState = "all"
+)
+
+type MergeRequestQuery struct {
+	State   MergeRequestState
+	Page    int
+	PerPage int
+}
+
+type MergeRequestResult struct {
+	Items       []ListItem
+	HasNextPage bool
+}
+
+type MergeRequestDetails struct {
+	IID          int64
+	State        string
+	Author       string
+	SourceBranch string
+	TargetBranch string
+	CreatedAt    string
+	UpdatedAt    string
+	URL          string
+	Description  string
+}
+
 type DataProvider interface {
 	LoadIssues(ctx context.Context, query IssueQuery) (IssueResult, error)
-	LoadMergeRequests(ctx context.Context) ([]ListItem, error)
+	LoadMergeRequests(ctx context.Context, query MergeRequestQuery) (MergeRequestResult, error)
 	LoadIssueDetailData(ctx context.Context, issueIID int64) (IssueDetailData, error)
 }
 
