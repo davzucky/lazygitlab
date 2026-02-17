@@ -26,6 +26,8 @@ var (
 	markdownLinkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Underline(true)
 	markdownQuoteStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	markdownFenceStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	markdownMermaidStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true)
+	markdownMermaidWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Italic(true)
 	ansiPattern          = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 )
 
@@ -96,6 +98,11 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 			out = append(out, "")
 		case *ast.FencedCodeBlock:
 			lang := strings.TrimSpace(string(typed.Language(source)))
+			if strings.EqualFold(lang, "mermaid") {
+				out = append(out, renderMermaidBlockLines(typed.Lines(), source, prefix)...)
+				out = append(out, "")
+				continue
+			}
 			if lang == "" {
 				out = append(out, markdownFenceStyle.Render(prefix+"```"))
 			} else {
@@ -156,6 +163,36 @@ func renderHighlightedCodeBlockLines(lines *text.Segments, source []byte, prefix
 	out := make([]string, 0, len(highlighted))
 	for _, line := range highlighted {
 		out = append(out, prefix+line)
+	}
+	return out
+}
+
+func renderMermaidBlockLines(lines *text.Segments, source []byte, prefix string) []string {
+	out := []string{
+		markdownMermaidStyle.Render(prefix + "```mermaid"),
+	}
+	sourceLines := extractCodeBlockLines(lines, source)
+	diagram, err := renderMermaidDiagram(strings.Join(sourceLines, "\n"))
+	if err != nil {
+		out = append(out, prefix+markdownMermaidWarn.Render("Mermaid not supported in this format; showing source."))
+		for _, line := range sourceLines {
+			out = append(out, prefix+line)
+		}
+		out = append(out, markdownMermaidStyle.Render(prefix+"```"))
+		return out
+	}
+	for _, line := range diagram {
+		out = append(out, prefix+line)
+	}
+	out = append(out, markdownMermaidStyle.Render(prefix+"```"))
+	return out
+}
+
+func extractCodeBlockLines(lines *text.Segments, source []byte) []string {
+	out := make([]string, 0, lines.Len())
+	for i := 0; i < lines.Len(); i++ {
+		segment := lines.At(i)
+		out = append(out, strings.TrimRight(string(segment.Value(source)), "\r\n"))
 	}
 	return out
 }

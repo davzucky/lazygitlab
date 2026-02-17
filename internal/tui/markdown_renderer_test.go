@@ -79,6 +79,33 @@ func TestRenderMarkdownStructuredCodeBlockIsHighlighted(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownStructuredMermaidBlockRendersDiagram(t *testing.T) {
+	input := "```mermaid\nflowchart LR\nA[Start] --> B[End]\n```"
+	lines := renderMarkdownStructured(input, 100)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Start") || !strings.Contains(joined, "End") {
+		t.Fatalf("expected rendered mermaid labels, got %#v", lines)
+	}
+	if !strings.Contains(joined, "▶") {
+		t.Fatalf("expected diagram arrow output, got %#v", lines)
+	}
+	if strings.Contains(joined, "Mermaid not supported in this format") {
+		t.Fatalf("did not expect fallback warning for supported diagram, got %#v", lines)
+	}
+}
+
+func TestRenderMarkdownStructuredMermaidBlockFallsBackToSource(t *testing.T) {
+	input := "```mermaid\nsequenceDiagram\nA->>B: hi\n```"
+	lines := renderMarkdownStructured(input, 80)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "Mermaid not supported in this format; showing source.") {
+		t.Fatalf("expected fallback warning, got %#v", lines)
+	}
+	if !strings.Contains(joined, "sequenceDiagram") || !strings.Contains(joined, "A->>B: hi") {
+		t.Fatalf("expected raw mermaid source in fallback, got %#v", lines)
+	}
+}
+
 func TestRenderMarkdownStructuredNestedLists(t *testing.T) {
 	input := "- parent\n  - child\n1. top\n   1. nested"
 	lines := renderMarkdownStructured(input, 40)
