@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/yuin/goldmark"
@@ -18,7 +19,7 @@ func renderMarkdownParagraphs(input string, width int) []string {
 	if content == "" {
 		return []string{""}
 	}
-	if len([]rune(content)) > maxMarkdownRenderChars {
+	if utf8.RuneCountInString(content) > maxMarkdownRenderChars {
 		return wrapParagraphs(content, width)
 	}
 
@@ -167,7 +168,11 @@ func extractNodeText(node ast.Node, source []byte) string {
 			}
 		case *ast.CodeSpan:
 			buffer.WriteByte('`')
-			buffer.WriteString(strings.TrimSpace(string(typed.Text(source))))
+			for codeChild := typed.FirstChild(); codeChild != nil; codeChild = codeChild.NextSibling() {
+				if textNode, ok := codeChild.(*ast.Text); ok {
+					buffer.Write(textNode.Segment.Value(source))
+				}
+			}
 			buffer.WriteByte('`')
 		case *ast.AutoLink:
 			buffer.WriteString(string(typed.Label(source)))
