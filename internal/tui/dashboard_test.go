@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -583,6 +584,46 @@ func TestDashboardMergeRequestDetailOpensAndCloses(t *testing.T) {
 	model = updated.(DashboardModel)
 	if model.mergeRequestDetail {
 		t.Fatal("expected merge request detail view to close")
+	}
+}
+
+func TestDashboardErrorRetryStillWorksInline(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+	m.errorMessage = "boom"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model := updated.(DashboardModel)
+	if model.errorMessage != "" {
+		t.Fatal("expected retry to clear inline error")
+	}
+	if cmd == nil {
+		t.Fatal("expected retry command")
+	}
+
+	_ = cmd()
+	if len(provider.issueCalls) == 0 {
+		t.Fatal("expected issue reload on retry")
+	}
+}
+
+func TestDashboardStatusShowsFocus(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{ProjectPath: "group/project", Host: "https://gitlab.example.com", Connection: "Connected"})
+	m.width = 120
+	m.errorMessage = "load failed"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	model := updated.(DashboardModel)
+
+	status := model.renderStatusBar(110)
+	if !strings.Contains(status, "focus:error") {
+		t.Fatalf("expected status to show error focus, got %q", status)
 	}
 }
 

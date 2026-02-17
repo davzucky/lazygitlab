@@ -38,10 +38,21 @@ type markdownRenderedMsg struct {
 
 type issueDetailTab int
 
+type focusTarget string
+
 const (
 	issueDetailTabOverview issueDetailTab = iota
 	issueDetailTabActivities
 	issueDetailTabComments
+)
+
+const (
+	focusSidebar focusTarget = "sidebar"
+	focusMain    focusTarget = "main"
+	focusDetail  focusTarget = "detail"
+	focusSearch  focusTarget = "search"
+	focusHelp    focusTarget = "help"
+	focusError   focusTarget = "error"
 )
 
 const maxMarkdownRenderChars = 12000
@@ -82,6 +93,7 @@ type DashboardModel struct {
 	loadingMore              bool
 	requestSeq               int
 	requestID                int
+	focus                    focusTarget
 }
 
 func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardModel {
@@ -114,6 +126,7 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		requestID:         1,
 		issuePage:         1,
 		mergeRequestPage:  1,
+		focus:             focusMain,
 	}
 }
 
@@ -213,40 +226,47 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.errorMessage != "" {
+			m.focus = focusError
 			switch msg.String() {
 			case "r":
 				m.errorMessage = ""
+				m.focus = focusMain
 				if m.view == PrimaryView {
 					return m, nil
 				}
 				return m.startLoadCurrentView()
-			case "esc", "q":
+			case "esc":
 				m.errorMessage = ""
+				m.focus = focusMain
 				return m, nil
 			}
-			return m, nil
 		}
 
 		if m.showHelp {
+			m.focus = focusHelp
 			switch msg.String() {
 			case "?", "esc", "q":
 				m.showHelp = false
+				m.focus = focusMain
 			}
 			return m, nil
 		}
 
 		if m.searchMode {
+			m.focus = focusSearch
 			var cmd tea.Cmd
 			m.searchInput, cmd = m.searchInput.Update(msg)
 			switch msg.String() {
 			case "enter":
 				m.searchMode = false
+				m.focus = focusMain
 				m.searchInput.Blur()
 				m.issueSearch = strings.TrimSpace(m.searchInput.Value())
 				m.selected = 0
 				return m.startLoadCurrentView()
 			case "esc":
 				m.searchMode = false
+				m.focus = focusMain
 				m.searchInput.Blur()
 				m.searchInput.SetValue(m.issueSearch)
 				return m, nil
@@ -255,9 +275,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.issueDetail {
+			m.focus = focusDetail
 			switch msg.String() {
 			case "esc":
 				m.issueDetail = false
+				m.focus = focusMain
 				m.detailScroll = 0
 				m.detailTab = issueDetailTabOverview
 				m.detailLoad = false
@@ -338,9 +360,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.mergeRequestDetail {
+			m.focus = focusDetail
 			switch msg.String() {
 			case "esc":
 				m.mergeRequestDetail = false
+				m.focus = focusMain
 				m.mergeRequestDetailScroll = 0
 				return m, nil
 			case "q", "ctrl+c":
@@ -366,6 +390,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.String() == "esc" && m.view != PrimaryView {
 			m.view = PrimaryView
+			m.focus = focusMain
 			m.selected = 0
 			m.loading = false
 			m.loadingMore = false
@@ -472,10 +497,6 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m DashboardModel) View() string {
-	if m.errorMessage != "" {
-		return m.styles.errorPopup.Render(fmt.Sprintf("Error\n\n%s\n\nPress r to retry\nPress q or Esc to close", m.errorMessage))
-	}
-
 	if m.showHelp {
 		return m.renderHelp()
 	}
@@ -534,6 +555,10 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.renderIssueBody(width)...)
 	} else {
 		lines = append(lines, m.renderMergeRequestBody(width)...)
+	}
+	if m.errorMessage != "" {
+		lines = append(lines, m.styles.errorPopup.UnsetWidth().UnsetBackground().BorderForeground(lipgloss.Color("196")).Render(" Load error: "+fitLine(m.errorMessage, max(12, width-16))))
+		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
 	bodyRows := max(1, height-len(lines)-2)
 	if m.view != PrimaryView && m.loading {
@@ -627,6 +652,7 @@ func (m DashboardModel) renderIssueDetailFullscreen(width int, height int) strin
 
 func (m DashboardModel) renderStatusBar(width int) string {
 	status := fmt.Sprintf("Project: %s | Host: %s | %s", m.ctx.ProjectPath, m.ctx.Host, m.ctx.Connection)
+	status += fmt.Sprintf(" | focus:%s", m.focusLabel())
 	if m.loading {
 		status += " | loading"
 	} else if m.view == PrimaryView {
@@ -647,6 +673,23 @@ func (m DashboardModel) renderStatusBar(width int) string {
 	}
 	innerWidth := max(1, width-m.styles.status.GetHorizontalFrameSize())
 	return m.styles.status.Width(innerWidth).Render(fitLine(status, innerWidth))
+}
+
+func (m DashboardModel) focusLabel() string {
+	switch m.focus {
+	case focusSidebar:
+		return "sidebar"
+	case focusDetail:
+		return "detail"
+	case focusSearch:
+		return "search"
+	case focusHelp:
+		return "help"
+	case focusError:
+		return "error"
+	default:
+		return "main"
+	}
 }
 
 func (m DashboardModel) renderHelp() string {
