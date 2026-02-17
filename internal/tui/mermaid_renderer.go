@@ -19,6 +19,19 @@ var (
 	mermaidNodePattern   = regexp.MustCompile(`^(\w+)(?:\[(.*?)\])?$`)
 )
 
+func isMermaidIgnorableLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return true
+	}
+	return strings.HasPrefix(lower, "%%") ||
+		strings.HasPrefix(lower, "subgraph ") ||
+		lower == "end" ||
+		strings.HasPrefix(lower, "direction ") ||
+		strings.HasPrefix(lower, "classdef ") ||
+		strings.HasPrefix(lower, "class ")
+}
+
 type mermaidGraph struct {
 	direction string
 	nodes     map[string]*mermaidNode
@@ -53,7 +66,7 @@ func parseMermaidFlowchart(input string) (*mermaidGraph, error) {
 	filtered := make([]string, 0, len(lines))
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "%%") {
+		if isMermaidIgnorableLine(line) {
 			continue
 		}
 		filtered = append(filtered, line)
