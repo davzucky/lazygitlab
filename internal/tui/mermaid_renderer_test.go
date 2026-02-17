@@ -1,0 +1,147 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestRenderMermaidDiagramFlowchartLR(t *testing.T) {
+	input := "flowchart LR\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "Start") {
+		t.Fatalf("expected Start label in diagram, got %q", output)
+	}
+	if !strings.Contains(output, "End") {
+		t.Fatalf("expected End label in diagram, got %q", output)
+	}
+	if !strings.Contains(output, "▶") {
+		t.Fatalf("expected right arrow in LR diagram, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramFlowchartTB(t *testing.T) {
+	input := "flowchart TB\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "▼") {
+		t.Fatalf("expected down arrow in TB diagram, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramFlowchartRL(t *testing.T) {
+	input := "flowchart RL\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "Start") || !strings.Contains(output, "End") {
+		t.Fatalf("expected RL labels in output, got %q", output)
+	}
+	if !strings.Contains(output, "◀") {
+		t.Fatalf("expected left arrow in RL diagram, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramFlowchartBT(t *testing.T) {
+	input := "flowchart BT\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "Start") || !strings.Contains(output, "End") {
+		t.Fatalf("expected BT labels in output, got %q", output)
+	}
+	if !strings.Contains(output, "▲") {
+		t.Fatalf("expected up arrow in BT diagram, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramUnsupportedSyntax(t *testing.T) {
+	input := "sequenceDiagram\nA->>B: hi"
+	_, err := renderMermaidDiagram(input, 0)
+	if err == nil {
+		t.Fatal("expected unsupported syntax error")
+	}
+}
+
+func TestRenderMermaidDiagramReportsOriginalSourceLine(t *testing.T) {
+	input := "flowchart LR\n\nsubgraph ST1\n  direction TB\n  A[Start]\nend\n\nBAD --- NODE"
+	_, err := renderMermaidDiagram(input, 0)
+	if err == nil {
+		t.Fatal("expected parse error for unsupported syntax")
+	}
+	if !strings.Contains(err.Error(), "line 8") {
+		t.Fatalf("expected original source line number in error, got %v", err)
+	}
+}
+
+func TestRenderMermaidDiagramCycleNotSupported(t *testing.T) {
+	input := "flowchart LR\nA --> B\nB --> A"
+	_, err := renderMermaidDiagram(input, 0)
+	if err == nil {
+		t.Fatal("expected cycle not supported error")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected not supported error, got %v", err)
+	}
+}
+
+func TestRenderMermaidDiagramSupportsSubgraphBlocks(t *testing.T) {
+	input := "flowchart LR\n" +
+		"subgraph ST1[\"Stage 1\"]\n" +
+		"direction TB\n" +
+		"J1[\"job one\"]\n" +
+		"J2[\"job two\"]\n" +
+		"end\n" +
+		"subgraph ST2[\"Stage 2\"]\n" +
+		"J3[\"job three\"]\n" +
+		"end\n" +
+		"J1 --> J2 --> J3\n" +
+		"classDef gate fill:#fff7ed,stroke:#f97316;\n" +
+		"class J2 gate"
+
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected subgraph diagram to render, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "job one") || !strings.Contains(output, "job two") || !strings.Contains(output, "job three") {
+		t.Fatalf("expected subgraph job labels in output, got %q", output)
+	}
+	if !strings.Contains(output, "▶") {
+		t.Fatalf("expected rendered edges in output, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramSwitchesToVerticalWhenTooWide(t *testing.T) {
+	input := "flowchart LR\nA[one] --> B[two] --> C[three] --> D[four]"
+	lines, err := renderMermaidDiagram(input, 24)
+	if err != nil {
+		t.Fatalf("expected render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "▼") {
+		t.Fatalf("expected vertical fallback arrow in output, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramAvoidsTinyHorizontalArtifactsInVerticalFlow(t *testing.T) {
+	input := "flowchart TB\nA[short] --> B[a much longer label] --> C[mid]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if strings.Contains(output, "│─") || strings.Contains(output, "─│") {
+		t.Fatalf("expected no tiny horizontal edge artifact, got %q", output)
+	}
+}
