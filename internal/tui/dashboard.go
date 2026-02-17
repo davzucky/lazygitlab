@@ -893,7 +893,7 @@ func (m DashboardModel) mergeRequestDetailLines(width int) []string {
 	}
 
 	wrappedMeta := wrapLines(lines, width)
-	wrappedDescription := wrapParagraphs(description, width)
+	wrappedDescription := renderMarkdownParagraphs(description, width)
 	return append(wrappedMeta, wrappedDescription...)
 }
 
@@ -1090,7 +1090,9 @@ func (m DashboardModel) markdownOrWrapped(issueIID int64, section string, index 
 	if rendered, ok := m.markdownBody[key]; ok {
 		return rendered
 	}
-	return wrapParagraphs(trimmed, width)
+	rendered := renderMarkdownParagraphs(trimmed, width)
+	m.markdownBody[key] = rendered
+	return rendered
 }
 
 func (m DashboardModel) issueActivityLines(width int, issueIID int64) []string {
