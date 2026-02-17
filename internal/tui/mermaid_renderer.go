@@ -480,11 +480,27 @@ func drawMermaidEdge(grid *mermaidGrid, from *mermaidNode, to *mermaidNode, dire
 		grid.set(endX, endY, arrow)
 		return
 	}
+	if abs(startX-endX) <= 1 {
+		columnX := startX
+		if endX < startX {
+			columnX = endX
+		}
+		drawMermaidVertical(grid, columnX, startY, endY)
+		grid.set(columnX, endY, arrow)
+		return
+	}
 	midY := startY + max(1, (endY-startY)/2)
 	drawMermaidVertical(grid, startX, startY, midY)
 	drawMermaidHorizontal(grid, startX, endX, midY)
 	drawMermaidVertical(grid, endX, midY, endY)
 	grid.set(endX, endY, arrow)
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func drawMermaidHorizontal(grid *mermaidGrid, start int, end int, y int) {

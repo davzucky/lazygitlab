@@ -92,3 +92,15 @@ func TestRenderMermaidDiagramSwitchesToVerticalWhenTooWide(t *testing.T) {
 		t.Fatalf("expected vertical fallback arrow in output, got %q", output)
 	}
 }
+
+func TestRenderMermaidDiagramAvoidsTinyHorizontalArtifactsInVerticalFlow(t *testing.T) {
+	input := "flowchart TB\nA[short] --> B[a much longer label] --> C[mid]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if strings.Contains(output, "│─") || strings.Contains(output, "─│") {
+		t.Fatalf("expected no tiny horizontal edge artifact, got %q", output)
+	}
+}
