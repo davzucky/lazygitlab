@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -55,7 +54,6 @@ const (
 	focusError  focusTarget = "error"
 )
 
-const maxMarkdownRenderChars = 12000
 const maxMarkdownPreloadComments = 3
 const approxCommentRows = 6
 
@@ -895,7 +893,7 @@ func (m DashboardModel) mergeRequestDetailLines(width int) []string {
 	}
 
 	wrappedMeta := wrapLines(lines, width)
-	wrappedDescription := wrapParagraphs(description, width)
+	wrappedDescription := renderMarkdownParagraphs(description, width)
 	return append(wrappedMeta, wrappedDescription...)
 }
 
@@ -1092,7 +1090,9 @@ func (m DashboardModel) markdownOrWrapped(issueIID int64, section string, index 
 	if rendered, ok := m.markdownBody[key]; ok {
 		return rendered
 	}
-	return wrapParagraphs(trimmed, width)
+	rendered := renderMarkdownParagraphs(trimmed, width)
+	m.markdownBody[key] = rendered
+	return rendered
 }
 
 func (m DashboardModel) issueActivityLines(width int, issueIID int64) []string {
@@ -1298,35 +1298,6 @@ func issueDetailTabForMarkdownSection(section string) (issueDetailTab, bool) {
 	default:
 		return issueDetailTabOverview, false
 	}
-}
-
-func renderMarkdownParagraphs(input string, width int) []string {
-	content := strings.TrimSpace(strings.ReplaceAll(input, "\r\n", "\n"))
-	if content == "" {
-		return []string{""}
-	}
-	if len([]rune(content)) > maxMarkdownRenderChars {
-		return wrapParagraphs(content, width)
-	}
-
-	rendered, err := renderMarkdown(content, width)
-	if err != nil {
-		return wrapParagraphs(content, width)
-	}
-
-	return strings.Split(strings.TrimRight(rendered, "\n"), "\n")
-}
-
-func renderMarkdown(input string, width int) (string, error) {
-	renderWidth := max(20, width)
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(renderWidth),
-	)
-	if err != nil {
-		return "", err
-	}
-	return renderer.Render(input)
 }
 
 func (m DashboardModel) loadIssueDetailDataCmd() tea.Cmd {
