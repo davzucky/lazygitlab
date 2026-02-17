@@ -29,8 +29,8 @@ func TestRenderMarkdownStructuredHeadingAndList(t *testing.T) {
 	if len(lines) == 0 {
 		t.Fatal("expected structured markdown output")
 	}
-	if lines[0] != "# Title" {
-		t.Fatalf("expected heading line, got %q", lines[0])
+	if stripANSI(lines[0]) != "# Title" {
+		t.Fatalf("expected heading line, got %q", stripANSI(lines[0]))
 	}
 	if !containsLineWithPrefix(lines, "- first") {
 		t.Fatalf("expected first bullet line in output, got %#v", lines)
@@ -57,12 +57,25 @@ func TestRenderMarkdownStructuredBlockquoteWrap(t *testing.T) {
 		t.Fatalf("expected wrapped blockquote output, got %#v", lines)
 	}
 	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
+		clean := stripANSI(line)
+		if strings.TrimSpace(clean) == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, "> ") {
+		if !strings.HasPrefix(clean, "> ") {
 			t.Fatalf("expected blockquote continuation to keep prefix, got line %q in %#v", line, lines)
 		}
+	}
+}
+
+func TestRenderMarkdownStructuredCodeBlockIsHighlighted(t *testing.T) {
+	input := "```go\nfmt.Println(\"hi\")\n```"
+	lines := renderMarkdownStructured(input, 80)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "\x1b[") {
+		t.Fatalf("expected ANSI color escapes in rendered code block, got %#v", lines)
+	}
+	if !containsLineWithPrefix(lines, "```") {
+		t.Fatalf("expected code fence lines in output, got %#v", lines)
 	}
 }
 
@@ -85,7 +98,7 @@ func TestRenderMarkdownStructuredNestedLists(t *testing.T) {
 
 func containsLineWithPrefix(lines []string, prefix string) bool {
 	for _, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+		if strings.HasPrefix(strings.TrimSpace(stripANSI(line)), prefix) {
 			return true
 		}
 	}

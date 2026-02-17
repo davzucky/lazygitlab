@@ -3,16 +3,31 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
 )
 
 const maxMarkdownRenderChars = 12000
+
+var (
+	markdownHeadingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	markdownEmStyle      = lipgloss.NewStyle().Italic(true)
+	markdownStrongStyle  = lipgloss.NewStyle().Bold(true)
+	markdownCodeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("236"))
+	markdownLinkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Underline(true)
+	markdownQuoteStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	markdownFenceStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	ansiPattern          = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+)
 
 func renderMarkdownParagraphs(input string, width int) []string {
 	content := strings.TrimSpace(strings.ReplaceAll(input, "\r\n", "\n"))
@@ -67,10 +82,11 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 		switch typed := node.(type) {
 		case *ast.Heading:
 			headingPrefix := strings.Repeat("#", typed.Level) + " "
-			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix+headingPrefix, strings.Repeat(" ", len(prefix)+len(headingPrefix)))...)
+			headingText := markdownHeadingStyle.Render(renderInlineChildren(typed, source))
+			out = append(out, wrapPrefixedText(headingText, width, prefix+headingPrefix, strings.Repeat(" ", len(prefix)+len(headingPrefix)))...)
 			out = append(out, "")
 		case *ast.Paragraph:
-			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix, prefix)...)
+			out = append(out, wrapPrefixedText(renderInlineChildren(typed, source), width, prefix, prefix)...)
 			out = append(out, "")
 		case *ast.Blockquote:
 			out = append(out, renderMarkdownBlocks(typed, source, width, prefix+"> ")...)
@@ -81,23 +97,23 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 		case *ast.FencedCodeBlock:
 			lang := strings.TrimSpace(string(typed.Language(source)))
 			if lang == "" {
-				out = append(out, prefix+"```")
+				out = append(out, markdownFenceStyle.Render(prefix+"```"))
 			} else {
-				out = append(out, prefix+"```"+lang)
+				out = append(out, markdownFenceStyle.Render(prefix+"```"+lang))
 			}
-			out = append(out, renderCodeBlockLines(typed.Lines(), source, prefix)...)
-			out = append(out, prefix+"```")
+			out = append(out, renderHighlightedCodeBlockLines(typed.Lines(), source, prefix, lang)...)
+			out = append(out, markdownFenceStyle.Render(prefix+"```"))
 			out = append(out, "")
 		case *ast.CodeBlock:
-			out = append(out, prefix+"```")
-			out = append(out, renderCodeBlockLines(typed.Lines(), source, prefix)...)
-			out = append(out, prefix+"```")
+			out = append(out, markdownFenceStyle.Render(prefix+"```"))
+			out = append(out, renderHighlightedCodeBlockLines(typed.Lines(), source, prefix, "")...)
+			out = append(out, markdownFenceStyle.Render(prefix+"```"))
 			out = append(out, "")
 		case *ast.ThematicBreak:
-			out = append(out, prefix+"---")
+			out = append(out, markdownFenceStyle.Render(prefix+"---"))
 			out = append(out, "")
 		default:
-			textValue := strings.TrimSpace(extractNodeText(node, source))
+			textValue := strings.TrimSpace(renderInlineChildren(node, source))
 			if textValue != "" {
 				out = append(out, wrapPrefixedText(textValue, width, prefix, prefix)...)
 				out = append(out, "")
@@ -112,6 +128,33 @@ func renderCodeBlockLines(lines *text.Segments, source []byte, prefix string) []
 	for i := 0; i < lines.Len(); i++ {
 		segment := lines.At(i)
 		line := strings.TrimRight(string(segment.Value(source)), "\r\n")
+		out = append(out, prefix+markdownCodeStyle.Render(line))
+	}
+	return out
+}
+
+func renderHighlightedCodeBlockLines(lines *text.Segments, source []byte, prefix string, language string) []string {
+	codeLines := make([]string, 0, lines.Len())
+	for i := 0; i < lines.Len(); i++ {
+		segment := lines.At(i)
+		codeLines = append(codeLines, strings.TrimRight(string(segment.Value(source)), "\r\n"))
+	}
+	code := strings.Join(codeLines, "\n")
+	if strings.TrimSpace(code) == "" {
+		return renderCodeBlockLines(lines, source, prefix)
+	}
+
+	var buf bytes.Buffer
+	lang := language
+	if strings.TrimSpace(lang) == "" {
+		lang = "plaintext"
+	}
+	if err := quick.Highlight(&buf, code, lang, "terminal16m", "monokai"); err != nil {
+		return renderCodeBlockLines(lines, source, prefix)
+	}
+	highlighted := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	out := make([]string, 0, len(highlighted))
+	for _, line := range highlighted {
 		out = append(out, prefix+line)
 	}
 	return out
@@ -193,23 +236,79 @@ func extractNodeText(node ast.Node, source []byte) string {
 	return strings.TrimSpace(buffer.String())
 }
 
+func renderInlineChildren(node ast.Node, source []byte) string {
+	var buffer bytes.Buffer
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		buffer.WriteString(renderInlineNode(child, source))
+	}
+	return strings.TrimSpace(buffer.String())
+}
+
+func renderInlineNode(node ast.Node, source []byte) string {
+	switch typed := node.(type) {
+	case *ast.Text:
+		textValue := string(typed.Segment.Value(source))
+		if typed.HardLineBreak() || typed.SoftLineBreak() {
+			return textValue + "\n"
+		}
+		return textValue
+	case *ast.CodeSpan:
+		var code bytes.Buffer
+		for child := typed.FirstChild(); child != nil; child = child.NextSibling() {
+			if textNode, ok := child.(*ast.Text); ok {
+				code.Write(textNode.Segment.Value(source))
+			}
+		}
+		return markdownCodeStyle.Render("`" + code.String() + "`")
+	case *ast.Emphasis:
+		content := renderInlineChildren(typed, source)
+		if typed.Level == 2 {
+			return markdownStrongStyle.Render(content)
+		}
+		return markdownEmStyle.Render(content)
+	case *ast.Link:
+		label := renderInlineChildren(typed, source)
+		if label == "" {
+			label = string(typed.Destination)
+		}
+		return markdownLinkStyle.Render(label)
+	case *ast.AutoLink:
+		return markdownLinkStyle.Render(string(typed.Label(source)))
+	case *ast.RawHTML:
+		var html bytes.Buffer
+		for i := 0; i < typed.Segments.Len(); i++ {
+			segment := typed.Segments.At(i)
+			html.Write(segment.Value(source))
+		}
+		return html.String()
+	default:
+		return renderInlineChildren(typed, source)
+	}
+}
+
 func wrapPrefixedText(input string, width int, prefix string, continuationPrefix string) []string {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return nil
 	}
-	effectiveWidth := max(1, width-len(prefix))
-	wrapped := wrapParagraphs(trimmed, effectiveWidth)
+	plainPrefixLen := lipgloss.Width(stripANSI(prefix))
+	effectiveWidth := max(1, width-plainPrefixLen)
+	wrappedText := strings.TrimRight(wordwrap.String(trimmed, effectiveWidth), "\n")
+	wrapped := strings.Split(wrappedText, "\n")
 	out := make([]string, 0, len(wrapped))
 	for i, line := range wrapped {
-		line = strings.TrimSpace(line)
+		line = strings.TrimRight(line, " ")
 		if i == 0 {
-			out = append(out, prefix+line)
+			out = append(out, markdownQuoteStyle.Render(prefix)+line)
 			continue
 		}
-		out = append(out, continuationPrefix+line)
+		out = append(out, markdownQuoteStyle.Render(continuationPrefix)+line)
 	}
 	return out
+}
+
+func stripANSI(input string) string {
+	return ansiPattern.ReplaceAllString(input, "")
 }
 
 func trimBlankEdges(lines []string) []string {
