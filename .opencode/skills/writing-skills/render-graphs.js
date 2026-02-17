@@ -19,7 +19,7 @@ const { execSync } = require('child_process');
 
 function extractDotBlocks(markdown) {
   const blocks = [];
-  const regex = /```dot\n([\s\S]*?)```/g;
+  const regex = /```dot\r?\n([\s\S]*?)```/g;
   let match;
 
   while ((match = regex.exec(markdown)) !== null) {
@@ -109,7 +109,8 @@ function main() {
 
   // Check if dot is available
   try {
-    execSync('which dot', { encoding: 'utf-8' });
+    const checkCmd = process.platform === 'win32' ? 'where dot' : 'which dot';
+    execSync(checkCmd, { encoding: 'utf-8', stdio: 'ignore' });
   } catch {
     console.error('Error: graphviz (dot) not found. Install with:');
     console.error('  brew install graphviz    # macOS');
