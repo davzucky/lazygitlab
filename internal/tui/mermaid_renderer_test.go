@@ -35,11 +35,52 @@ func TestRenderMermaidDiagramFlowchartTB(t *testing.T) {
 	}
 }
 
+func TestRenderMermaidDiagramFlowchartRL(t *testing.T) {
+	input := "flowchart RL\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "Start") || !strings.Contains(output, "End") {
+		t.Fatalf("expected RL labels in output, got %q", output)
+	}
+	if !strings.Contains(output, "◀") {
+		t.Fatalf("expected left arrow in RL diagram, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramFlowchartBT(t *testing.T) {
+	input := "flowchart BT\nA[Start] --> B[End]"
+	lines, err := renderMermaidDiagram(input, 0)
+	if err != nil {
+		t.Fatalf("expected mermaid render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "Start") || !strings.Contains(output, "End") {
+		t.Fatalf("expected BT labels in output, got %q", output)
+	}
+	if !strings.Contains(output, "▲") {
+		t.Fatalf("expected up arrow in BT diagram, got %q", output)
+	}
+}
+
 func TestRenderMermaidDiagramUnsupportedSyntax(t *testing.T) {
 	input := "sequenceDiagram\nA->>B: hi"
 	_, err := renderMermaidDiagram(input, 0)
 	if err == nil {
 		t.Fatal("expected unsupported syntax error")
+	}
+}
+
+func TestRenderMermaidDiagramReportsOriginalSourceLine(t *testing.T) {
+	input := "flowchart LR\n\nsubgraph ST1\n  direction TB\n  A[Start]\nend\n\nBAD --- NODE"
+	_, err := renderMermaidDiagram(input, 0)
+	if err == nil {
+		t.Fatal("expected parse error for unsupported syntax")
+	}
+	if !strings.Contains(err.Error(), "line 8") {
+		t.Fatalf("expected original source line number in error, got %v", err)
 	}
 }
 

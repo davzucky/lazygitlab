@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -52,6 +53,11 @@ type mermaidEdge struct {
 	to   string
 }
 
+type mermaidSourceLine struct {
+	text   string
+	lineNo int
+}
+
 func renderMermaidDiagram(input string, maxWidth int) ([]string, error) {
 	graph, err := parseMermaidFlowchart(input)
 	if err != nil {
@@ -93,19 +99,19 @@ func tryVerticalMermaidDirection(direction string) (string, bool) {
 
 func parseMermaidFlowchart(input string) (*mermaidGraph, error) {
 	lines := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
-	filtered := make([]string, 0, len(lines))
-	for _, raw := range lines {
+	filtered := make([]mermaidSourceLine, 0, len(lines))
+	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if isMermaidIgnorableLine(line) {
 			continue
 		}
-		filtered = append(filtered, line)
+		filtered = append(filtered, mermaidSourceLine{text: line, lineNo: i + 1})
 	}
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("empty mermaid content")
 	}
 
-	header := mermaidHeaderPattern.FindStringSubmatch(filtered[0])
+	header := mermaidHeaderPattern.FindStringSubmatch(filtered[0].text)
 	if len(header) != 2 {
 		return nil, fmt.Errorf("only flowchart LR/RL/TB/BT is supported")
 	}
@@ -117,14 +123,14 @@ func parseMermaidFlowchart(input string) (*mermaidGraph, error) {
 	}
 
 	for i := 1; i < len(filtered); i++ {
-		line := filtered[i]
+		line := filtered[i].text
 		parts := strings.Split(line, "-->")
 		if len(parts) > 1 {
 			prev := ""
 			for _, part := range parts {
 				node, err := parseMermaidNode(strings.TrimSpace(part))
 				if err != nil {
-					return nil, fmt.Errorf("line %d: %w", i+1, err)
+					return nil, fmt.Errorf("line %d: %w", filtered[i].lineNo, err)
 				}
 				graph.addOrUpdateNode(node)
 				if prev != "" {
@@ -137,7 +143,7 @@ func parseMermaidFlowchart(input string) (*mermaidGraph, error) {
 
 		node, err := parseMermaidNode(line)
 		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", i+1, err)
+			return nil, fmt.Errorf("line %d: %w", filtered[i].lineNo, err)
 		}
 		graph.addOrUpdateNode(node)
 	}
@@ -211,7 +217,7 @@ func hasMermaidCycle(graph *mermaidGraph) bool {
 
 func layoutMermaidGraph(graph *mermaidGraph) {
 	for _, node := range graph.nodes {
-		node.width = max(mermaidMinNodeWidth, len(node.label)+2)
+		node.width = max(mermaidMinNodeWidth, utf8.RuneCountInString(node.label)+2)
 		node.height = mermaidNodeHeight
 	}
 	layers := assignMermaidLayers(graph)
@@ -232,10 +238,9 @@ func assignMermaidLayers(graph *mermaidGraph) map[string]int {
 	queue := make([]string, 0, len(graph.nodes))
 	for id, degree := range inDegree {
 		if degree == 0 {
-			queue = append(queue, id)
+			queue = insertSorted(queue, id)
 		}
 	}
-	sort.Strings(queue)
 
 	layer := make(map[string]int, len(graph.nodes))
 	for len(queue) > 0 {
@@ -249,12 +254,19 @@ func assignMermaidLayers(graph *mermaidGraph) map[string]int {
 			}
 			inDegree[next]--
 			if inDegree[next] == 0 {
-				queue = append(queue, next)
-				sort.Strings(queue)
+				queue = insertSorted(queue, next)
 			}
 		}
 	}
 	return layer
+}
+
+func insertSorted(items []string, value string) []string {
+	index := sort.SearchStrings(items, value)
+	items = append(items, "")
+	copy(items[index+1:], items[index:])
+	items[index] = value
+	return items
 }
 
 func assignMermaidCoordinates(graph *mermaidGraph, layers map[string]int) {
@@ -378,27 +390,95 @@ type mermaidGrid struct {
 	width  int
 	height int
 	rows   [][]rune
+	locked [][]bool
 }
 
 func makeMermaidGrid(width int, height int) *mermaidGrid {
 	rows := make([][]rune, height)
+	locked := make([][]bool, height)
 	for y := 0; y < height; y++ {
 		rows[y] = make([]rune, width)
+		locked[y] = make([]bool, width)
 		for x := 0; x < width; x++ {
 			rows[y][x] = ' '
 		}
 	}
-	return &mermaidGrid{width: width, height: height, rows: rows}
+	return &mermaidGrid{width: width, height: height, rows: rows, locked: locked}
 }
 
 func (g *mermaidGrid) set(x int, y int, ch rune) {
 	if x < 0 || y < 0 || x >= g.width || y >= g.height {
 		return
 	}
+	// Ignore spaces so drawing never erases existing content.
 	if ch == ' ' {
 		return
 	}
 	g.rows[y][x] = ch
+}
+
+func (g *mermaidGrid) setIfEmptyOrEdge(x int, y int, ch rune) {
+	if x < 0 || y < 0 || x >= g.width || y >= g.height {
+		return
+	}
+	if ch == ' ' {
+		return
+	}
+	current := g.rows[y][x]
+	if current == ' ' {
+		g.rows[y][x] = ch
+		return
+	}
+	if g.locked[y][x] {
+		return
+	}
+	if isMermaidArrowRune(ch) {
+		g.rows[y][x] = ch
+		return
+	}
+	if merged, ok := mergeMermaidEdgeRunes(current, ch); ok {
+		g.rows[y][x] = merged
+	}
+}
+
+func isMermaidArrowRune(ch rune) bool {
+	switch ch {
+	case '▶', '◀', '▼', '▲':
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeMermaidEdgeRunes(current rune, next rune) (rune, bool) {
+	if current == next {
+		return current, true
+	}
+	hasHorizontal := current == '─' || current == '┼'
+	hasVertical := current == '│' || current == '┼'
+	if next == '─' {
+		hasHorizontal = true
+	}
+	if next == '│' {
+		hasVertical = true
+	}
+	if hasHorizontal && hasVertical {
+		return '┼', true
+	}
+	if hasHorizontal {
+		return '─', true
+	}
+	if hasVertical {
+		return '│', true
+	}
+	return current, false
+}
+
+func (g *mermaidGrid) markLocked(x int, y int) {
+	if x < 0 || y < 0 || x >= g.width || y >= g.height {
+		return
+	}
+	g.locked[y][x] = true
 }
 
 func (g *mermaidGrid) lines() []string {
@@ -416,20 +496,30 @@ func drawMermaidNode(grid *mermaidGrid, node *mermaidNode) {
 	w := node.width
 	h := node.height
 	grid.set(x, y, '┌')
+	grid.markLocked(x, y)
 	grid.set(x+w-1, y, '┐')
+	grid.markLocked(x+w-1, y)
 	grid.set(x, y+h-1, '└')
+	grid.markLocked(x, y+h-1)
 	grid.set(x+w-1, y+h-1, '┘')
+	grid.markLocked(x+w-1, y+h-1)
 	for i := 1; i < w-1; i++ {
 		grid.set(x+i, y, '─')
+		grid.markLocked(x+i, y)
 		grid.set(x+i, y+h-1, '─')
+		grid.markLocked(x+i, y+h-1)
 	}
 	for i := 1; i < h-1; i++ {
 		grid.set(x, y+i, '│')
+		grid.markLocked(x, y+i)
 		grid.set(x+w-1, y+i, '│')
+		grid.markLocked(x+w-1, y+i)
 	}
-	labelX := x + max(1, (w-len(node.label))/2)
+	labelWidth := utf8.RuneCountInString(node.label)
+	labelX := x + max(1, (w-labelWidth)/2)
 	for i, r := range []rune(node.label) {
 		grid.set(labelX+i, y+1, r)
+		grid.markLocked(labelX+i, y+1)
 	}
 }
 
@@ -464,20 +554,20 @@ func drawMermaidEdge(grid *mermaidGrid, from *mermaidNode, to *mermaidNode, dire
 	if direction == "LR" || direction == "RL" {
 		if startY == endY {
 			drawMermaidHorizontal(grid, startX, endX, startY)
-			grid.set(endX, endY, arrow)
+			grid.setIfEmptyOrEdge(endX, endY, arrow)
 			return
 		}
 		midX := startX + max(1, (endX-startX)/2)
 		drawMermaidHorizontal(grid, startX, midX, startY)
 		drawMermaidVertical(grid, midX, startY, endY)
 		drawMermaidHorizontal(grid, midX, endX, endY)
-		grid.set(endX, endY, arrow)
+		grid.setIfEmptyOrEdge(endX, endY, arrow)
 		return
 	}
 
 	if startX == endX {
 		drawMermaidVertical(grid, startX, startY, endY)
-		grid.set(endX, endY, arrow)
+		grid.setIfEmptyOrEdge(endX, endY, arrow)
 		return
 	}
 	if abs(startX-endX) <= 1 {
@@ -486,14 +576,14 @@ func drawMermaidEdge(grid *mermaidGrid, from *mermaidNode, to *mermaidNode, dire
 			columnX = endX
 		}
 		drawMermaidVertical(grid, columnX, startY, endY)
-		grid.set(columnX, endY, arrow)
+		grid.setIfEmptyOrEdge(columnX, endY, arrow)
 		return
 	}
 	midY := startY + max(1, (endY-startY)/2)
 	drawMermaidVertical(grid, startX, startY, midY)
 	drawMermaidHorizontal(grid, startX, endX, midY)
 	drawMermaidVertical(grid, endX, midY, endY)
-	grid.set(endX, endY, arrow)
+	grid.setIfEmptyOrEdge(endX, endY, arrow)
 }
 
 func abs(v int) int {
@@ -508,7 +598,7 @@ func drawMermaidHorizontal(grid *mermaidGrid, start int, end int, y int) {
 		start, end = end, start
 	}
 	for x := start; x <= end; x++ {
-		grid.set(x, y, '─')
+		grid.setIfEmptyOrEdge(x, y, '─')
 	}
 }
 
@@ -517,6 +607,6 @@ func drawMermaidVertical(grid *mermaidGrid, x int, start int, end int) {
 		start, end = end, start
 	}
 	for y := start; y <= end; y++ {
-		grid.set(x, y, '│')
+		grid.setIfEmptyOrEdge(x, y, '│')
 	}
 }
