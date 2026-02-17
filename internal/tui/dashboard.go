@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +57,7 @@ const (
 )
 
 const maxMarkdownRenderChars = 12000
+const maxMarkdownPreloadComments = 2
 
 type DashboardModel struct {
 	provider                 DataProvider
@@ -221,7 +223,11 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.markdownBody[msg.cacheKey] = msg.lines
-		m.clearDetailCache()
+		if issueIID, ok := issueIIDFromMarkdownCacheKey(msg.cacheKey); ok {
+			m.invalidateDetailCacheForIssue(issueIID)
+		} else {
+			m.clearDetailCache()
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -1196,13 +1202,18 @@ func (m DashboardModel) preloadMarkdownCmd() tea.Cmd {
 
 	if m.detailTab == issueDetailTabComments {
 		if data, ok := m.detailData[issueIID]; ok {
+			preloaded := 0
 			for i, comment := range data.Comments {
+				if preloaded >= maxMarkdownPreloadComments {
+					break
+				}
 				body := strings.TrimSpace(comment.Body)
 				if body == "" {
 					continue
 				}
 				if cmd := m.markdownCmdForContent(issueIID, "comment", i, body, width); cmd != nil {
 					cmds = append(cmds, cmd)
+					preloaded++
 				}
 			}
 		}
@@ -1233,6 +1244,18 @@ func markdownCacheKey(issueIID int64, section string, index int, width int, cont
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(content))
 	return fmt.Sprintf("%d:%s:%d:%d:%x", issueIID, section, index, width, h.Sum64())
+}
+
+func issueIIDFromMarkdownCacheKey(cacheKey string) (int64, bool) {
+	parts := strings.SplitN(cacheKey, ":", 2)
+	if len(parts) < 2 {
+		return 0, false
+	}
+	value, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || value <= 0 {
+		return 0, false
+	}
+	return value, true
 }
 
 func renderMarkdownParagraphs(input string, width int) []string {
