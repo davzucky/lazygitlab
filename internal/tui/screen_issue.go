@@ -2,6 +2,14 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+var issueKeyHints = []string{
+	"enter: open issue details",
+	"/: search",
+	"[: prev state",
+	"]: next state",
+	"o/c/a: open/closed/all",
+}
+
 func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bool) {
 	if m.view != IssuesView {
 		return m, nil, false
@@ -61,9 +69,11 @@ func (m DashboardModel) renderIssueBody(width int) []string {
 	lines := []string{
 		" " + m.renderIssueTabs(max(20, width-8)),
 		" " + m.renderIssueSearch(max(20, width-8)),
-		m.styles.dim.Render(" enter: open issue details"),
 		m.styles.dim.Render(" sort: updated newest first"),
 		"",
+	}
+	for _, hint := range issueKeyHints {
+		lines = append(lines, m.styles.dim.Render(" "+hint))
 	}
 	return lines
 }

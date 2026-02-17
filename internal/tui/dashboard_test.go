@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -122,7 +123,7 @@ func TestDashboardPrimaryRoutesToMergeRequests(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
 	model := updated.(DashboardModel)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(DashboardModel)
@@ -136,7 +137,7 @@ func TestDashboardEscReturnsToPrimaryFromMergeRequests(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
 	model := updated.(DashboardModel)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(DashboardModel)
@@ -583,6 +584,89 @@ func TestDashboardMergeRequestDetailOpensAndCloses(t *testing.T) {
 	model = updated.(DashboardModel)
 	if model.mergeRequestDetail {
 		t.Fatal("expected merge request detail view to close")
+	}
+}
+
+func TestDashboardErrorRetryStillWorksInline(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+	m.errorMessage = "boom"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	model := updated.(DashboardModel)
+	if model.errorMessage != "" {
+		t.Fatal("expected retry to clear inline error")
+	}
+	if cmd == nil {
+		t.Fatal("expected retry command")
+	}
+
+	_ = cmd()
+	if len(provider.issueCalls) == 0 {
+		t.Fatal("expected issue reload on retry")
+	}
+}
+
+func TestDashboardStatusShowsFocus(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{ProjectPath: "group/project", Host: "https://gitlab.example.com", Connection: "Connected"})
+	m.width = 120
+	m.errorMessage = "load failed"
+	m.focus = focusError
+
+	status := m.renderStatusBar(110)
+	if !strings.Contains(status, "focus:error") {
+		t.Fatalf("expected status to show error focus, got %q", status)
+	}
+}
+
+func TestDashboardIssueDetailRendersFullscreen(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+	m.width = 120
+	m.height = 30
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	view := model.View()
+
+	if !strings.Contains(view, "Issue Detail") {
+		t.Fatalf("expected fullscreen issue detail header, got %q", view)
+	}
+}
+
+func TestParseMarkdownCacheKey(t *testing.T) {
+	t.Parallel()
+
+	issueIID, section, ok := parseMarkdownCacheKey("101:comment:0:80:abc")
+	if !ok {
+		t.Fatal("expected parse success")
+	}
+	if issueIID != 101 {
+		t.Fatalf("issueIID = %d want %d", issueIID, 101)
+	}
+	if section != "comment" {
+		t.Fatalf("section = %q want %q", section, "comment")
+	}
+}
+
+func TestIssueDetailTabForMarkdownSection(t *testing.T) {
+	t.Parallel()
+
+	if tab, ok := issueDetailTabForMarkdownSection("description"); !ok || tab != issueDetailTabOverview {
+		t.Fatalf("expected overview tab mapping, got tab=%v ok=%v", tab, ok)
+	}
+	if tab, ok := issueDetailTabForMarkdownSection("comment"); !ok || tab != issueDetailTabComments {
+		t.Fatalf("expected comments tab mapping, got tab=%v ok=%v", tab, ok)
 	}
 }
 

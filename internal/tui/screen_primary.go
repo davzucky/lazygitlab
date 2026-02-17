@@ -2,6 +2,12 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+var primaryKeyHints = []string{
+	"j/k or arrows: move",
+	"enter: open selected screen",
+	"1/2/3: quick screen select",
+}
+
 func (m DashboardModel) handlePrimaryScreenKey(key string) (tea.Model, tea.Cmd, bool) {
 	if m.view != PrimaryView {
 		return m, nil, false
@@ -31,7 +37,7 @@ func (m DashboardModel) handlePrimaryScreenKey(key string) (tea.Model, tea.Cmd, 
 		m.primaryIndex = 0
 		return m, nil, true
 	case "2":
-		m.primaryIndex = 1
+		m.primaryIndex = 0
 		return m, nil, true
 	case "3":
 		m.primaryIndex = 1
@@ -61,6 +67,8 @@ func (m DashboardModel) renderPrimaryBody(width int) []string {
 		lines = append(lines, m.styles.dim.Render("  "+fitLine(entry.hint, max(10, width-8))))
 		lines = append(lines, "")
 	}
-	lines = append(lines, m.styles.dim.Render(" enter: open selected screen"))
+	for _, hint := range primaryKeyHints {
+		lines = append(lines, m.styles.dim.Render(" "+hint))
+	}
 	return lines
 }
