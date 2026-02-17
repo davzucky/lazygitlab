@@ -26,6 +26,13 @@ and token, then saves config to `~/.config/lazygitlab/config.yml`.
 2. `~/.config/lazygitlab/config.yml`
 3. `~/.config/glab-cli/config.yml`
 
+## Theme
+
+- LazyGitLab now uses adaptive TUI colors so the interface follows your current
+  terminal light/dark theme.
+- Optional accent override: set `LAZYGITLAB_ACCENT` to a hex color (for example
+  `#00aaff`) or ANSI color index (for example `39`).
+
 ## Flags
 
 - `--project group/subgroup/name`: manually set project context
