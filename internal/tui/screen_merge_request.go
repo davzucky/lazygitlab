@@ -2,6 +2,13 @@ package tui
 
 import tea "github.com/charmbracelet/bubbletea"
 
+var mergeRequestKeyHints = []string{
+	"enter: toggle details pane",
+	"[: prev state",
+	"]: next state",
+	"o/m/c/a: open/merged/closed/all",
+}
+
 func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.Cmd, bool) {
 	if m.view != MergeRequestsView {
 		return m, nil, false
@@ -52,9 +59,11 @@ func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.
 func (m DashboardModel) renderMergeRequestBody(width int) []string {
 	lines := []string{
 		" " + m.renderMergeRequestTabs(max(20, width-8)),
-		m.styles.dim.Render(" enter: open merge request details"),
 		m.styles.dim.Render(" sort: updated newest first"),
 		"",
+	}
+	for _, hint := range mergeRequestKeyHints {
+		lines = append(lines, m.styles.dim.Render(" "+hint))
 	}
 	return lines
 }

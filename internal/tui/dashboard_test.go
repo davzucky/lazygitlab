@@ -627,6 +627,25 @@ func TestDashboardStatusShowsFocus(t *testing.T) {
 	}
 }
 
+func TestDashboardIssueDetailRendersInlinePane(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+	m.width = 120
+	m.height = 30
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model := updated.(DashboardModel)
+	view := model.View()
+
+	if !strings.Contains(view, "Detail pane") {
+		t.Fatalf("expected inline detail pane label, got %q", view)
+	}
+}
+
 func TestListRowWidthTracksAvailableWidth(t *testing.T) {
 	t.Parallel()
 

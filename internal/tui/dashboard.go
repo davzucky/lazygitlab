@@ -505,15 +505,6 @@ func (m DashboardModel) View() string {
 	contentHeight := max(8, m.height-5)
 	status := m.renderStatusBar(totalWidth)
 
-	if m.issueDetail {
-		detail := m.renderIssueDetailFullscreen(totalWidth, contentHeight)
-		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
-	}
-	if m.mergeRequestDetail {
-		detail := m.renderMergeRequestDetailFullscreen(totalWidth, contentHeight)
-		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
-	}
-
 	navWidth := minInt(28, max(22, totalWidth/4))
 	mainWidth := max(36, totalWidth-navWidth)
 	sidebar := m.renderSidebar(navWidth, contentHeight)
@@ -560,6 +551,19 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.styles.errorPopup.UnsetWidth().UnsetBackground().BorderForeground(lipgloss.Color("196")).Render(" Load error: "+fitLine(m.errorMessage, max(12, width-16))))
 		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
+	if m.issueDetail || m.mergeRequestDetail {
+		bodyRows := max(6, height-len(lines)-2)
+		listRows := max(3, bodyRows/2)
+		detailRows := max(2, bodyRows-listRows-1)
+
+		listLines := m.renderListLines(max(10, width-8), listRows)
+		lines = append(lines, listLines...)
+		lines = append(lines, m.styles.dim.Render(fitLine(" Detail pane (Esc closes detail)", max(10, width-8))))
+		lines = append(lines, m.renderDetailPaneLines(max(10, width-8), detailRows)...)
+		innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
+		lines = fitHeight(lines, innerHeight)
+		return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
+	}
 	bodyRows := max(1, height-len(lines)-2)
 	if m.view != PrimaryView && m.loading {
 		lines = append(lines, "  "+m.spinner.View()+" Loading...")
@@ -567,41 +571,7 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, "  No items")
 	} else if m.view != PrimaryView {
 		contentWidth := max(10, width-8)
-		rowWidth := listRowWidth(contentWidth)
-		rowsPerItem := 1
-		if m.view == IssuesView {
-			rowsPerItem = 2
-		} else if m.view == MergeRequestsView {
-			rowsPerItem = 2
-		}
-		visibleItems := max(1, bodyRows/rowsPerItem)
-		start, end := visibleRange(len(m.items), m.selected, visibleItems)
-		for i := start; i < end; i++ {
-			item := m.items[i]
-			prefix := "  "
-			rowStyle := m.styles.normalRow
-			if i == m.selected {
-				prefix = "› "
-				rowStyle = m.styles.selectedRow
-			}
-			line := prefix + fitLine(item.Title, rowWidth)
-			lines = append(lines, rowStyle.Render(line))
-			if m.view == IssuesView {
-				meta := "  " + fitLine(issueListMeta(item), rowWidth)
-				lines = append(lines, m.styles.dim.Render(meta))
-			} else if m.view == MergeRequestsView {
-				meta := strings.TrimSpace(item.Subtitle)
-				if meta == "" {
-					meta = "-"
-				}
-				lines = append(lines, m.styles.dim.Render("  "+fitLine(meta, rowWidth)))
-			}
-		}
-
-		if len(m.items) > visibleItems {
-			footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
-			lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
-		}
+		lines = append(lines, m.renderListLines(contentWidth, bodyRows)...)
 		if (m.view == IssuesView || m.view == MergeRequestsView) && m.loadingMore {
 			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
 		}
@@ -610,6 +580,74 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
 	lines = fitHeight(lines, innerHeight)
 	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
+}
+
+func (m DashboardModel) renderListLines(contentWidth int, bodyRows int) []string {
+	rowWidth := listRowWidth(contentWidth)
+	rowsPerItem := 1
+	if m.view == IssuesView || m.view == MergeRequestsView {
+		rowsPerItem = 2
+	}
+	visibleItems := max(1, bodyRows/rowsPerItem)
+	start, end := visibleRange(len(m.items), m.selected, visibleItems)
+	lines := make([]string, 0, bodyRows)
+	for i := start; i < end; i++ {
+		item := m.items[i]
+		prefix := "  "
+		rowStyle := m.styles.normalRow
+		if i == m.selected {
+			prefix = "› "
+			rowStyle = m.styles.selectedRow
+		}
+		line := prefix + fitLine(item.Title, rowWidth)
+		lines = append(lines, rowStyle.Render(line))
+		if m.view == IssuesView {
+			meta := "  " + fitLine(issueListMeta(item), rowWidth)
+			lines = append(lines, m.styles.dim.Render(meta))
+		} else if m.view == MergeRequestsView {
+			meta := strings.TrimSpace(item.Subtitle)
+			if meta == "" {
+				meta = "-"
+			}
+			lines = append(lines, m.styles.dim.Render("  "+fitLine(meta, rowWidth)))
+		}
+	}
+	if len(m.items) > visibleItems {
+		footer := fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.items))
+		lines = append(lines, m.styles.dim.Render(fitLine(footer, contentWidth)))
+	}
+	return lines
+}
+
+func (m DashboardModel) renderDetailPaneLines(width int, rows int) []string {
+	if rows <= 0 {
+		return nil
+	}
+	if m.issueDetail {
+		detailLines := m.issueDetailLines(max(8, width-2))
+		start := m.detailScroll
+		if start < 0 {
+			start = 0
+		}
+		if start > max(0, len(detailLines)-rows) {
+			start = max(0, len(detailLines)-rows)
+		}
+		end := minInt(len(detailLines), start+rows)
+		return withVerticalScroll(detailLines[start:end], max(8, width-2), start, rows, len(detailLines))
+	}
+	if m.mergeRequestDetail {
+		detailLines := m.mergeRequestDetailLines(max(8, width-2))
+		start := m.mergeRequestDetailScroll
+		if start < 0 {
+			start = 0
+		}
+		if start > max(0, len(detailLines)-rows) {
+			start = max(0, len(detailLines)-rows)
+		}
+		end := minInt(len(detailLines), start+rows)
+		return withVerticalScroll(detailLines[start:end], max(8, width-2), start, rows, len(detailLines))
+	}
+	return nil
 }
 
 func (m DashboardModel) renderIssueDetailFullscreen(width int, height int) string {
