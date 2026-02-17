@@ -99,7 +99,7 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 		case *ast.FencedCodeBlock:
 			lang := strings.TrimSpace(string(typed.Language(source)))
 			if strings.EqualFold(lang, "mermaid") {
-				out = append(out, renderMermaidBlockLines(typed.Lines(), source, prefix)...)
+				out = append(out, renderMermaidBlockLines(typed.Lines(), source, prefix, width)...)
 				out = append(out, "")
 				continue
 			}
@@ -167,12 +167,12 @@ func renderHighlightedCodeBlockLines(lines *text.Segments, source []byte, prefix
 	return out
 }
 
-func renderMermaidBlockLines(lines *text.Segments, source []byte, prefix string) []string {
+func renderMermaidBlockLines(lines *text.Segments, source []byte, prefix string, width int) []string {
 	out := []string{
 		markdownMermaidStyle.Render(prefix + "```mermaid"),
 	}
 	sourceLines := extractCodeBlockLines(lines, source)
-	diagram, err := renderMermaidDiagram(strings.Join(sourceLines, "\n"))
+	diagram, err := renderMermaidDiagram(strings.Join(sourceLines, "\n"), width-lipgloss.Width(prefix))
 	if err != nil {
 		out = append(out, prefix+markdownMermaidWarn.Render("Mermaid not supported in this format; showing source."))
 		for _, line := range sourceLines {

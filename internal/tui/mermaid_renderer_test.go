@@ -7,7 +7,7 @@ import (
 
 func TestRenderMermaidDiagramFlowchartLR(t *testing.T) {
 	input := "flowchart LR\nA[Start] --> B[End]"
-	lines, err := renderMermaidDiagram(input)
+	lines, err := renderMermaidDiagram(input, 0)
 	if err != nil {
 		t.Fatalf("expected mermaid render success, got error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestRenderMermaidDiagramFlowchartLR(t *testing.T) {
 
 func TestRenderMermaidDiagramFlowchartTB(t *testing.T) {
 	input := "flowchart TB\nA[Start] --> B[End]"
-	lines, err := renderMermaidDiagram(input)
+	lines, err := renderMermaidDiagram(input, 0)
 	if err != nil {
 		t.Fatalf("expected mermaid render success, got error: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestRenderMermaidDiagramFlowchartTB(t *testing.T) {
 
 func TestRenderMermaidDiagramUnsupportedSyntax(t *testing.T) {
 	input := "sequenceDiagram\nA->>B: hi"
-	_, err := renderMermaidDiagram(input)
+	_, err := renderMermaidDiagram(input, 0)
 	if err == nil {
 		t.Fatal("expected unsupported syntax error")
 	}
@@ -45,7 +45,7 @@ func TestRenderMermaidDiagramUnsupportedSyntax(t *testing.T) {
 
 func TestRenderMermaidDiagramCycleNotSupported(t *testing.T) {
 	input := "flowchart LR\nA --> B\nB --> A"
-	_, err := renderMermaidDiagram(input)
+	_, err := renderMermaidDiagram(input, 0)
 	if err == nil {
 		t.Fatal("expected cycle not supported error")
 	}
@@ -68,7 +68,7 @@ func TestRenderMermaidDiagramSupportsSubgraphBlocks(t *testing.T) {
 		"classDef gate fill:#fff7ed,stroke:#f97316;\n" +
 		"class J2 gate"
 
-	lines, err := renderMermaidDiagram(input)
+	lines, err := renderMermaidDiagram(input, 0)
 	if err != nil {
 		t.Fatalf("expected subgraph diagram to render, got error: %v", err)
 	}
@@ -78,5 +78,17 @@ func TestRenderMermaidDiagramSupportsSubgraphBlocks(t *testing.T) {
 	}
 	if !strings.Contains(output, "▶") {
 		t.Fatalf("expected rendered edges in output, got %q", output)
+	}
+}
+
+func TestRenderMermaidDiagramSwitchesToVerticalWhenTooWide(t *testing.T) {
+	input := "flowchart LR\nA[one] --> B[two] --> C[three] --> D[four]"
+	lines, err := renderMermaidDiagram(input, 24)
+	if err != nil {
+		t.Fatalf("expected render success, got error: %v", err)
+	}
+	output := strings.Join(lines, "\n")
+	if !strings.Contains(output, "▼") {
+		t.Fatalf("expected vertical fallback arrow in output, got %q", output)
 	}
 }

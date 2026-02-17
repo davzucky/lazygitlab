@@ -52,13 +52,43 @@ type mermaidEdge struct {
 	to   string
 }
 
-func renderMermaidDiagram(input string) ([]string, error) {
+func renderMermaidDiagram(input string, maxWidth int) ([]string, error) {
 	graph, err := parseMermaidFlowchart(input)
 	if err != nil {
 		return nil, err
 	}
 	layoutMermaidGraph(graph)
-	return renderMermaidGraph(graph), nil
+	lines := renderMermaidGraph(graph)
+	if maxWidth > 0 && widestMermaidLine(lines) > maxWidth {
+		switched, ok := tryVerticalMermaidDirection(graph.direction)
+		if ok {
+			graph.direction = switched
+			layoutMermaidGraph(graph)
+			lines = renderMermaidGraph(graph)
+		}
+	}
+	return lines, nil
+}
+
+func widestMermaidLine(lines []string) int {
+	maxWidth := 0
+	for _, line := range lines {
+		if len([]rune(line)) > maxWidth {
+			maxWidth = len([]rune(line))
+		}
+	}
+	return maxWidth
+}
+
+func tryVerticalMermaidDirection(direction string) (string, bool) {
+	switch direction {
+	case "LR":
+		return "TB", true
+	case "RL":
+		return "BT", true
+	default:
+		return "", false
+	}
 }
 
 func parseMermaidFlowchart(input string) (*mermaidGraph, error) {
