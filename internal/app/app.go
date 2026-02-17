@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/term"
 
 	"github.com/davzucky/lazygitlab/internal/config"
 	"github.com/davzucky/lazygitlab/internal/gitlab"
@@ -83,8 +85,16 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
+	interactive := isInteractiveSession(os.Stdin, os.Stdout)
+	if !interactive && projectPath == "" {
+		return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
+	}
+
 	selected := config.Instance{Host: cfg.Host, Token: cfg.Token}
 	if projectPath == "" {
+		if !interactive {
+			return errors.New("project picker requires an interactive terminal; pass --project")
+		}
 		instances, err := config.LoadInstances()
 		if err != nil {
 			return fmt.Errorf("load configured instances: %w", err)
@@ -143,6 +153,9 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	if projectPath == "" {
+		if !interactive {
+			return errors.New("project picker requires an interactive terminal; pass --project")
+		}
 		listCtx, cancelList := context.WithTimeout(ctx, 20*time.Second)
 		defer cancelList()
 
@@ -166,6 +179,11 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	provider := NewProvider(client, projectPath)
+	if !interactive {
+		renderNonInteractiveSummary(os.Stdout, cfg.Host, projectPath, user.Username)
+		return nil
+	}
+
 	model := tui.NewDashboardModel(provider, tui.DashboardContext{
 		ProjectPath: projectPath,
 		Connection:  fmt.Sprintf("Connected as %s", user.Username),
@@ -200,4 +218,19 @@ func formatInstanceLabel(host string) string {
 	}
 
 	return fmt.Sprintf("%s (%s)", u.Host, strings.TrimSuffix(u.Path, "/"))
+}
+
+func isInteractiveSession(stdin *os.File, stdout *os.File) bool {
+	if stdin == nil || stdout == nil {
+		return false
+	}
+	return term.IsTerminal(int(stdin.Fd())) && term.IsTerminal(int(stdout.Fd()))
+}
+
+func renderNonInteractiveSummary(w io.Writer, host string, projectPath string, username string) {
+	fmt.Fprintf(w, "lazygitlab non-interactive summary\n")
+	fmt.Fprintf(w, "host: %s\n", strings.TrimSpace(host))
+	fmt.Fprintf(w, "project: %s\n", strings.TrimSpace(projectPath))
+	fmt.Fprintf(w, "user: %s\n", strings.TrimSpace(username))
+	fmt.Fprintf(w, "tip: run in an interactive terminal to open the TUI\n")
 }
