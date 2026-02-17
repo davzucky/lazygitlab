@@ -731,27 +731,38 @@ func (m DashboardModel) focusLabel() string {
 }
 
 func (m DashboardModel) renderHelp() string {
-	content := `Keybindings
-
-Navigation:
-  j/k or up/down      Move in list/selection
-  h/l or left/right   Switch view
-  tab/shift+tab       Cycle views
-
-Actions:
-  1,2,3               Jump to view/select
-  enter               Open issue or MR details
-  esc                 Close detail or return Primary
-  tab/shift+tab       Cycle issue detail tabs
-  d/a/c               Jump Detail/Activities/Comments
-  [,] or o/c/a        Issue state tabs
-  [,] or o/m/c/a      MR state tabs
-  /                   Search issues
-  r                   Retry load (errors)
-  q                   Quit
-  ?                   Toggle help
-`
-	return m.styles.helpPopup.Render(content)
+	lines := []string{
+		"Keybindings",
+		"",
+		"Navigation:",
+		"  j/k or up/down      Move in list/selection",
+		"  h/l or left/right   Switch view",
+		"  tab/shift+tab       Cycle views",
+		"",
+		"Primary:",
+	}
+	for _, hint := range primaryKeyHints {
+		lines = append(lines, "  "+hint)
+	}
+	lines = append(lines, "", "Issues:")
+	for _, hint := range issueKeyHints {
+		lines = append(lines, "  "+hint)
+	}
+	lines = append(lines, "", "Merge Requests:")
+	for _, hint := range mergeRequestKeyHints {
+		lines = append(lines, "  "+hint)
+	}
+	lines = append(lines,
+		"",
+		"Common:",
+		"  esc                 Close detail or return Primary",
+		"  d/a/c               Jump Detail/Activities/Comments",
+		"  /                   Search issues",
+		"  r                   Retry load (errors)",
+		"  q                   Quit",
+		"  ?                   Toggle help",
+	)
+	return m.styles.helpPopup.Render(strings.Join(lines, "\n"))
 }
 
 func (m DashboardModel) startLoadCurrentView() (tea.Model, tea.Cmd) {
