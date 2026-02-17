@@ -66,10 +66,10 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 		switch typed := node.(type) {
 		case *ast.Heading:
 			headingPrefix := strings.Repeat("#", typed.Level) + " "
-			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix+headingPrefix)...)
+			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix+headingPrefix, strings.Repeat(" ", len(prefix)+len(headingPrefix)))...)
 			out = append(out, "")
 		case *ast.Paragraph:
-			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix)...)
+			out = append(out, wrapPrefixedText(extractNodeText(typed, source), width, prefix, prefix)...)
 			out = append(out, "")
 		case *ast.Blockquote:
 			out = append(out, renderMarkdownBlocks(typed, source, width, prefix+"> ")...)
@@ -84,20 +84,12 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 			} else {
 				out = append(out, prefix+"```"+lang)
 			}
-			for i := 0; i < typed.Lines().Len(); i++ {
-				segment := typed.Lines().At(i)
-				line := strings.TrimRight(string(segment.Value(source)), "\r\n")
-				out = append(out, prefix+line)
-			}
+			out = append(out, renderCodeBlockLines(typed.Lines(), source, prefix)...)
 			out = append(out, prefix+"```")
 			out = append(out, "")
 		case *ast.CodeBlock:
 			out = append(out, prefix+"```")
-			for i := 0; i < typed.Lines().Len(); i++ {
-				segment := typed.Lines().At(i)
-				line := strings.TrimRight(string(segment.Value(source)), "\r\n")
-				out = append(out, prefix+line)
-			}
+			out = append(out, renderCodeBlockLines(typed.Lines(), source, prefix)...)
 			out = append(out, prefix+"```")
 			out = append(out, "")
 		case *ast.ThematicBreak:
@@ -106,10 +98,20 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 		default:
 			textValue := strings.TrimSpace(extractNodeText(node, source))
 			if textValue != "" {
-				out = append(out, wrapPrefixedText(textValue, width, prefix)...)
+				out = append(out, wrapPrefixedText(textValue, width, prefix, prefix)...)
 				out = append(out, "")
 			}
 		}
+	}
+	return out
+}
+
+func renderCodeBlockLines(lines *text.Segments, source []byte, prefix string) []string {
+	out := make([]string, 0, lines.Len())
+	for i := 0; i < lines.Len(); i++ {
+		segment := lines.At(i)
+		line := strings.TrimRight(string(segment.Value(source)), "\r\n")
+		out = append(out, prefix+line)
 	}
 	return out
 }
@@ -139,14 +141,14 @@ func renderMarkdownListItem(item *ast.ListItem, source []byte, width int, prefix
 	for child := item.FirstChild(); child != nil; child = child.NextSibling() {
 		switch typed := child.(type) {
 		case *ast.Paragraph:
-			itemLines = append(itemLines, wrapPrefixedText(extractNodeText(typed, source), width, firstPrefix)...)
+			itemLines = append(itemLines, wrapPrefixedText(extractNodeText(typed, source), width, firstPrefix, continuationPrefix)...)
 			firstPrefix = continuationPrefix
 		case *ast.List:
 			itemLines = append(itemLines, renderMarkdownList(typed, source, width, continuationPrefix)...)
 		default:
 			textValue := strings.TrimSpace(extractNodeText(child, source))
 			if textValue != "" {
-				itemLines = append(itemLines, wrapPrefixedText(textValue, width, firstPrefix)...)
+				itemLines = append(itemLines, wrapPrefixedText(textValue, width, firstPrefix, continuationPrefix)...)
 				firstPrefix = continuationPrefix
 			}
 		}
@@ -186,7 +188,7 @@ func extractNodeText(node ast.Node, source []byte) string {
 	return strings.TrimSpace(buffer.String())
 }
 
-func wrapPrefixedText(input string, width int, prefix string) []string {
+func wrapPrefixedText(input string, width int, prefix string, continuationPrefix string) []string {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
 		return nil
@@ -200,7 +202,7 @@ func wrapPrefixedText(input string, width int, prefix string) []string {
 			out = append(out, prefix+line)
 			continue
 		}
-		out = append(out, strings.Repeat(" ", len(prefix))+line)
+		out = append(out, continuationPrefix+line)
 	}
 	return out
 }

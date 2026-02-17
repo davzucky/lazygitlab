@@ -50,6 +50,39 @@ func TestRenderMarkdownStructuredBlockquote(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownStructuredBlockquoteWrap(t *testing.T) {
+	input := "> this is a very long blockquote line that should wrap to multiple lines"
+	lines := renderMarkdownStructured(input, 24)
+	if len(lines) < 2 {
+		t.Fatalf("expected wrapped blockquote output, got %#v", lines)
+	}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "> ") {
+			t.Fatalf("expected blockquote continuation to keep prefix, got line %q in %#v", line, lines)
+		}
+	}
+}
+
+func TestRenderMarkdownStructuredNestedLists(t *testing.T) {
+	input := "- parent\n  - child\n1. top\n   1. nested"
+	lines := renderMarkdownStructured(input, 40)
+	if !containsLineWithPrefix(lines, "- parent") {
+		t.Fatalf("expected parent bullet, got %#v", lines)
+	}
+	if !containsLineWithPrefix(lines, "- child") {
+		t.Fatalf("expected nested bullet, got %#v", lines)
+	}
+	if !containsLineWithPrefix(lines, "1. top") {
+		t.Fatalf("expected ordered parent item, got %#v", lines)
+	}
+	if !containsLineWithPrefix(lines, "1. nested") {
+		t.Fatalf("expected nested ordered item, got %#v", lines)
+	}
+}
+
 func containsLineWithPrefix(lines []string, prefix string) bool {
 	for _, line := range lines {
 		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
