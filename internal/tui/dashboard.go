@@ -99,7 +99,8 @@ type DashboardModel struct {
 func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardModel {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
+	resolvedStyles := newStyles()
+	sp.Style = lipgloss.NewStyle().Foreground(resolveAccentColor())
 
 	search := textinput.New()
 	search.Prompt = "Search: "
@@ -110,7 +111,7 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 	return DashboardModel{
 		provider:          provider,
 		ctx:               ctx,
-		styles:            newStyles(),
+		styles:            resolvedStyles,
 		view:              PrimaryView,
 		width:             100,
 		height:            40,
@@ -578,7 +579,7 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.renderMergeRequestBody(width)...)
 	}
 	if m.errorMessage != "" {
-		lines = append(lines, m.styles.errorPopup.UnsetWidth().UnsetBackground().BorderForeground(lipgloss.Color("196")).Render(" Load error: "+fitLine(m.errorMessage, max(12, width-16))))
+		lines = append(lines, m.styles.errorPopup.UnsetWidth().UnsetBackground().Render(" Load error: "+fitLine(m.errorMessage, max(12, width-16))))
 		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
 	bodyRows := max(1, height-len(lines)-2)
@@ -893,7 +894,7 @@ func (m DashboardModel) mergeRequestDetailLines(width int) []string {
 	}
 
 	wrappedMeta := wrapLines(lines, width)
-	wrappedDescription := renderMarkdownParagraphs(description, width)
+	wrappedDescription := renderMarkdownParagraphs(description, width, m.styles.markdown)
 	return append(wrappedMeta, wrappedDescription...)
 }
 
@@ -1090,7 +1091,7 @@ func (m DashboardModel) markdownOrWrapped(issueIID int64, section string, index 
 	if rendered, ok := m.markdownBody[key]; ok {
 		return rendered
 	}
-	rendered := renderMarkdownParagraphs(trimmed, width)
+	rendered := renderMarkdownParagraphs(trimmed, width, m.styles.markdown)
 	m.markdownBody[key] = rendered
 	return rendered
 }
@@ -1266,7 +1267,7 @@ func (m DashboardModel) markdownCmdForContent(issueIID int64, section string, in
 		return nil
 	}
 	return func() tea.Msg {
-		lines := renderMarkdownParagraphs(trimmed, width)
+		lines := renderMarkdownParagraphs(trimmed, width, m.styles.markdown)
 		return markdownRenderedMsg{cacheKey: key, lines: lines}
 	}
 }

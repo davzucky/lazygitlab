@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderMarkdownParagraphsEmpty(t *testing.T) {
-	lines := renderMarkdownParagraphs("   ", 40)
+	lines := renderMarkdownParagraphs("   ", 40, newStyles().markdown)
 	if len(lines) != 1 || lines[0] != "" {
 		t.Fatalf("expected single empty line, got %#v", lines)
 	}
@@ -14,7 +14,7 @@ func TestRenderMarkdownParagraphsEmpty(t *testing.T) {
 
 func TestRenderMarkdownParagraphsLongInputFallsBackToWrapping(t *testing.T) {
 	content := strings.Repeat("word ", maxMarkdownRenderChars)
-	lines := renderMarkdownParagraphs(content, 20)
+	lines := renderMarkdownParagraphs(content, 20, newStyles().markdown)
 	if len(lines) == 0 {
 		t.Fatal("expected wrapped output for long markdown input")
 	}
@@ -25,7 +25,7 @@ func TestRenderMarkdownParagraphsLongInputFallsBackToWrapping(t *testing.T) {
 
 func TestRenderMarkdownStructuredHeadingAndList(t *testing.T) {
 	input := "# Title\n\n- first item\n- second item"
-	lines := renderMarkdownStructured(input, 40)
+	lines := renderMarkdownStructured(input, 40, newStyles().markdown)
 	if len(lines) == 0 {
 		t.Fatal("expected structured markdown output")
 	}
@@ -41,7 +41,7 @@ func TestRenderMarkdownStructuredHeadingAndList(t *testing.T) {
 }
 
 func TestRenderMarkdownStructuredBlockquote(t *testing.T) {
-	lines := renderMarkdownStructured("> quoted line one\n> quoted line two", 32)
+	lines := renderMarkdownStructured("> quoted line one\n> quoted line two", 32, newStyles().markdown)
 	if len(lines) == 0 {
 		t.Fatal("expected structured markdown output")
 	}
@@ -52,7 +52,7 @@ func TestRenderMarkdownStructuredBlockquote(t *testing.T) {
 
 func TestRenderMarkdownStructuredBlockquoteWrap(t *testing.T) {
 	input := "> this is a very long blockquote line that should wrap to multiple lines"
-	lines := renderMarkdownStructured(input, 24)
+	lines := renderMarkdownStructured(input, 24, newStyles().markdown)
 	if len(lines) < 2 {
 		t.Fatalf("expected wrapped blockquote output, got %#v", lines)
 	}
@@ -69,7 +69,7 @@ func TestRenderMarkdownStructuredBlockquoteWrap(t *testing.T) {
 
 func TestRenderMarkdownStructuredCodeBlockIsHighlighted(t *testing.T) {
 	input := "```go\nfmt.Println(\"hi\")\n```"
-	lines := renderMarkdownStructured(input, 80)
+	lines := renderMarkdownStructured(input, 80, newStyles().markdown)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "\x1b[") {
 		t.Fatalf("expected ANSI color escapes in rendered code block, got %#v", lines)
@@ -81,7 +81,7 @@ func TestRenderMarkdownStructuredCodeBlockIsHighlighted(t *testing.T) {
 
 func TestRenderMarkdownStructuredMermaidBlockRendersDiagram(t *testing.T) {
 	input := "```mermaid\nflowchart LR\nA[Start] --> B[End]\n```"
-	lines := renderMarkdownStructured(input, 100)
+	lines := renderMarkdownStructured(input, 100, newStyles().markdown)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "Start") || !strings.Contains(joined, "End") {
 		t.Fatalf("expected rendered mermaid labels, got %#v", lines)
@@ -96,7 +96,7 @@ func TestRenderMarkdownStructuredMermaidBlockRendersDiagram(t *testing.T) {
 
 func TestRenderMarkdownStructuredMermaidBlockFallsBackToSource(t *testing.T) {
 	input := "```mermaid\nsequenceDiagram\nA->>B: hi\n```"
-	lines := renderMarkdownStructured(input, 80)
+	lines := renderMarkdownStructured(input, 80, newStyles().markdown)
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "Mermaid not supported in this format; showing source.") {
 		t.Fatalf("expected fallback warning, got %#v", lines)
@@ -108,7 +108,7 @@ func TestRenderMarkdownStructuredMermaidBlockFallsBackToSource(t *testing.T) {
 
 func TestRenderMarkdownStructuredNestedLists(t *testing.T) {
 	input := "- parent\n  - child\n1. top\n   1. nested"
-	lines := renderMarkdownStructured(input, 40)
+	lines := renderMarkdownStructured(input, 40, newStyles().markdown)
 	if !containsLineWithPrefix(lines, "- parent") {
 		t.Fatalf("expected parent bullet, got %#v", lines)
 	}
