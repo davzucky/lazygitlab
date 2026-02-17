@@ -57,7 +57,8 @@ const (
 )
 
 const maxMarkdownRenderChars = 12000
-const maxMarkdownPreloadComments = 2
+const maxMarkdownPreloadComments = 3
+const approxCommentRows = 6
 
 type DashboardModel struct {
 	provider                 DataProvider
@@ -223,8 +224,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.markdownBody[msg.cacheKey] = msg.lines
-		if issueIID, ok := issueIIDFromMarkdownCacheKey(msg.cacheKey); ok {
-			m.invalidateDetailCacheForIssue(issueIID)
+		if issueIID, section, ok := parseMarkdownCacheKey(msg.cacheKey); ok {
+			if tab, tabOK := issueDetailTabForMarkdownSection(section); tabOK {
+				m.invalidateDetailCacheForIssueTab(issueIID, tab)
+			} else {
+				m.invalidateDetailCacheForIssue(issueIID)
+			}
 		} else {
 			m.clearDetailCache()
 		}
@@ -295,15 +300,27 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "j", "down":
 				m.detailScroll = m.clampDetailScroll(m.detailScroll + 1)
+				if m.detailTab == issueDetailTabComments {
+					return m, m.preloadMarkdownCmd()
+				}
 				return m, nil
 			case "k", "up":
 				m.detailScroll = m.clampDetailScroll(m.detailScroll - 1)
+				if m.detailTab == issueDetailTabComments {
+					return m, m.preloadMarkdownCmd()
+				}
 				return m, nil
 			case "pgdown":
 				m.detailScroll = m.clampDetailScroll(m.detailScroll + 8)
+				if m.detailTab == issueDetailTabComments {
+					return m, m.preloadMarkdownCmd()
+				}
 				return m, nil
 			case "pgup":
 				m.detailScroll = m.clampDetailScroll(m.detailScroll - 8)
+				if m.detailTab == issueDetailTabComments {
+					return m, m.preloadMarkdownCmd()
+				}
 				return m, nil
 			case "?":
 				m.showHelp = true
@@ -944,6 +961,15 @@ func (m DashboardModel) invalidateDetailCacheForIssue(issueIID int64) {
 	}
 }
 
+func (m DashboardModel) invalidateDetailCacheForIssueTab(issueIID int64, tab issueDetailTab) {
+	prefix := fmt.Sprintf("%d:%d:", issueIID, tab)
+	for key := range m.detailCache {
+		if strings.HasPrefix(key, prefix) {
+			delete(m.detailCache, key)
+		}
+	}
+}
+
 func (m DashboardModel) invalidateMarkdownCacheForIssue(issueIID int64) {
 	prefix := fmt.Sprintf("%d:", issueIID)
 	for key := range m.markdownBody {
@@ -1202,11 +1228,26 @@ func (m DashboardModel) preloadMarkdownCmd() tea.Cmd {
 
 	if m.detailTab == issueDetailTabComments {
 		if data, ok := m.detailData[issueIID]; ok {
+			start := 0
+			if m.detailScroll > 0 {
+				start = m.detailScroll / approxCommentRows
+			}
+			if start > 0 {
+				start--
+			}
+			if start >= len(data.Comments) {
+				start = len(data.Comments) - 1
+			}
+			if start < 0 {
+				start = 0
+			}
+
 			preloaded := 0
-			for i, comment := range data.Comments {
+			for i := start; i < len(data.Comments); i++ {
 				if preloaded >= maxMarkdownPreloadComments {
 					break
 				}
+				comment := data.Comments[i]
 				body := strings.TrimSpace(comment.Body)
 				if body == "" {
 					continue
@@ -1246,16 +1287,27 @@ func markdownCacheKey(issueIID int64, section string, index int, width int, cont
 	return fmt.Sprintf("%d:%s:%d:%d:%x", issueIID, section, index, width, h.Sum64())
 }
 
-func issueIIDFromMarkdownCacheKey(cacheKey string) (int64, bool) {
-	parts := strings.SplitN(cacheKey, ":", 2)
+func parseMarkdownCacheKey(cacheKey string) (int64, string, bool) {
+	parts := strings.SplitN(cacheKey, ":", 3)
 	if len(parts) < 2 {
-		return 0, false
+		return 0, "", false
 	}
 	value, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || value <= 0 {
-		return 0, false
+		return 0, "", false
 	}
-	return value, true
+	return value, parts[1], true
+}
+
+func issueDetailTabForMarkdownSection(section string) (issueDetailTab, bool) {
+	switch section {
+	case "description":
+		return issueDetailTabOverview, true
+	case "comment":
+		return issueDetailTabComments, true
+	default:
+		return issueDetailTabOverview, false
+	}
 }
 
 func renderMarkdownParagraphs(input string, width int) []string {

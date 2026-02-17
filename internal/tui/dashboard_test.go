@@ -646,6 +646,32 @@ func TestDashboardIssueDetailRendersFullscreen(t *testing.T) {
 	}
 }
 
+func TestParseMarkdownCacheKey(t *testing.T) {
+	t.Parallel()
+
+	issueIID, section, ok := parseMarkdownCacheKey("101:comment:0:80:abc")
+	if !ok {
+		t.Fatal("expected parse success")
+	}
+	if issueIID != 101 {
+		t.Fatalf("issueIID = %d want %d", issueIID, 101)
+	}
+	if section != "comment" {
+		t.Fatalf("section = %q want %q", section, "comment")
+	}
+}
+
+func TestIssueDetailTabForMarkdownSection(t *testing.T) {
+	t.Parallel()
+
+	if tab, ok := issueDetailTabForMarkdownSection("description"); !ok || tab != issueDetailTabOverview {
+		t.Fatalf("expected overview tab mapping, got tab=%v ok=%v", tab, ok)
+	}
+	if tab, ok := issueDetailTabForMarkdownSection("comment"); !ok || tab != issueDetailTabComments {
+		t.Fatalf("expected comments tab mapping, got tab=%v ok=%v", tab, ok)
+	}
+}
+
 func TestListRowWidthTracksAvailableWidth(t *testing.T) {
 	t.Parallel()
 
