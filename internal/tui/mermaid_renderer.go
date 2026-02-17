@@ -273,6 +273,44 @@ func assignMermaidCoordinates(graph *mermaidGraph, layers map[string]int) {
 		})
 	}
 
+	layerWidths := make(map[int]int, maxLayer+1)
+	layerHeights := make(map[int]int, maxLayer+1)
+	maxLayerWidth := 0
+	maxLayerHeight := 0
+	for i := 0; i <= maxLayer; i++ {
+		nodes := byLayer[i]
+		if len(nodes) == 0 {
+			continue
+		}
+		maxNodeWidth := 0
+		totalNodeWidth := 0
+		maxNodeHeight := 0
+		totalNodeHeight := 0
+		for _, node := range nodes {
+			if node.width > maxNodeWidth {
+				maxNodeWidth = node.width
+			}
+			totalNodeWidth += node.width
+			if node.height > maxNodeHeight {
+				maxNodeHeight = node.height
+			}
+			totalNodeHeight += node.height
+		}
+		if graph.direction == "LR" || graph.direction == "RL" {
+			layerWidths[i] = maxNodeWidth
+			layerHeights[i] = totalNodeHeight + max(0, len(nodes)-1)*mermaidVerticalGap
+		} else {
+			layerWidths[i] = totalNodeWidth + max(0, len(nodes)-1)*mermaidHorizontalGap
+			layerHeights[i] = maxNodeHeight
+		}
+		if layerWidths[i] > maxLayerWidth {
+			maxLayerWidth = layerWidths[i]
+		}
+		if layerHeights[i] > maxLayerHeight {
+			maxLayerHeight = layerHeights[i]
+		}
+	}
+
 	if graph.direction == "LR" || graph.direction == "RL" {
 		x := 0
 		for i := 0; i <= maxLayer; i++ {
@@ -280,7 +318,7 @@ func assignMermaidCoordinates(graph *mermaidGraph, layers map[string]int) {
 			if graph.direction == "RL" {
 				layerIndex = maxLayer - i
 			}
-			y := 0
+			y := max(0, (maxLayerHeight-layerHeights[layerIndex])/2)
 			maxWidth := mermaidMinNodeWidth
 			for _, node := range byLayer[layerIndex] {
 				node.x = x
@@ -301,7 +339,7 @@ func assignMermaidCoordinates(graph *mermaidGraph, layers map[string]int) {
 		if graph.direction == "BT" {
 			layerIndex = maxLayer - i
 		}
-		x := 0
+		x := max(0, (maxLayerWidth-layerWidths[layerIndex])/2)
 		maxHeight := mermaidNodeHeight
 		for _, node := range byLayer[layerIndex] {
 			node.x = x
@@ -424,7 +462,12 @@ func drawMermaidEdge(grid *mermaidGrid, from *mermaidNode, to *mermaidNode, dire
 	}
 
 	if direction == "LR" || direction == "RL" {
-		midX := startX + (endX-startX)/2
+		if startY == endY {
+			drawMermaidHorizontal(grid, startX, endX, startY)
+			grid.set(endX, endY, arrow)
+			return
+		}
+		midX := startX + max(1, (endX-startX)/2)
 		drawMermaidHorizontal(grid, startX, midX, startY)
 		drawMermaidVertical(grid, midX, startY, endY)
 		drawMermaidHorizontal(grid, midX, endX, endY)
@@ -432,7 +475,12 @@ func drawMermaidEdge(grid *mermaidGrid, from *mermaidNode, to *mermaidNode, dire
 		return
 	}
 
-	midY := startY + (endY-startY)/2
+	if startX == endX {
+		drawMermaidVertical(grid, startX, startY, endY)
+		grid.set(endX, endY, arrow)
+		return
+	}
+	midY := startY + max(1, (endY-startY)/2)
 	drawMermaidVertical(grid, startX, startY, midY)
 	drawMermaidHorizontal(grid, startX, endX, midY)
 	drawMermaidVertical(grid, endX, midY, endY)

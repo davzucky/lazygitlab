@@ -184,8 +184,39 @@ func renderMermaidBlockLines(lines *text.Segments, source []byte, prefix string,
 	for _, line := range diagram {
 		out = append(out, prefix+line)
 	}
+	out = centerMermaidLines(out, prefix, width)
 	out = append(out, markdownMermaidStyle.Render(prefix+"```"))
 	return out
+}
+
+func centerMermaidLines(lines []string, prefix string, width int) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	contentWidth := width - lipgloss.Width(prefix)
+	if contentWidth <= 0 {
+		return lines
+	}
+	centered := make([]string, 0, len(lines))
+	for i, line := range lines {
+		if i == 0 {
+			centered = append(centered, line)
+			continue
+		}
+		if !strings.HasPrefix(line, prefix) {
+			centered = append(centered, line)
+			continue
+		}
+		raw := strings.TrimPrefix(line, prefix)
+		lineWidth := lipgloss.Width(raw)
+		if lineWidth <= 0 || lineWidth >= contentWidth {
+			centered = append(centered, line)
+			continue
+		}
+		leftPad := (contentWidth - lineWidth) / 2
+		centered = append(centered, prefix+strings.Repeat(" ", leftPad)+raw)
+	}
+	return centered
 }
 
 func extractCodeBlockLines(lines *text.Segments, source []byte) []string {
