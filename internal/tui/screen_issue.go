@@ -3,7 +3,7 @@ package tui
 import tea "github.com/charmbracelet/bubbletea"
 
 var issueKeyHints = []string{
-	"enter: toggle details pane",
+	"enter: open issue details",
 	"/: search",
 	"[: prev state",
 	"]: next state",

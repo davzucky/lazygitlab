@@ -3,7 +3,7 @@ package tui
 import tea "github.com/charmbracelet/bubbletea"
 
 var mergeRequestKeyHints = []string{
-	"enter: toggle details pane",
+	"enter: open merge request details",
 	"[: prev state",
 	"]: next state",
 	"o/m/c/a: open/merged/closed/all",

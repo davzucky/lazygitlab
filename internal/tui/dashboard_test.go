@@ -627,7 +627,7 @@ func TestDashboardStatusShowsFocus(t *testing.T) {
 	}
 }
 
-func TestDashboardIssueDetailRendersInlinePane(t *testing.T) {
+func TestDashboardIssueDetailRendersFullscreen(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
@@ -641,8 +641,8 @@ func TestDashboardIssueDetailRendersInlinePane(t *testing.T) {
 	model := updated.(DashboardModel)
 	view := model.View()
 
-	if !strings.Contains(view, "Detail pane") {
-		t.Fatalf("expected inline detail pane label, got %q", view)
+	if !strings.Contains(view, "Issue Detail") {
+		t.Fatalf("expected fullscreen issue detail header, got %q", view)
 	}
 }
 
