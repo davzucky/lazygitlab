@@ -56,7 +56,12 @@ func Run(ctx context.Context, opts Options) error {
 		cfg.Debug = true
 	}
 
+	interactive := isInteractiveSession(os.Stdin, os.Stdout)
+
 	if cfg.NeedsSetup() {
+		if !interactive {
+			return errors.New("first-run setup requires an interactive terminal; configure host and token manually")
+		}
 		setupResult, setupErr := tui.RunSetupWizard(cfg.Host)
 		if setupErr != nil {
 			return fmt.Errorf("first-run setup failed: %w", setupErr)
@@ -85,7 +90,6 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	interactive := isInteractiveSession(os.Stdin, os.Stdout)
 	if !interactive && projectPath == "" {
 		return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
 	}
@@ -153,9 +157,6 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	if projectPath == "" {
-		if !interactive {
-			return errors.New("project picker requires an interactive terminal; pass --project")
-		}
 		listCtx, cancelList := context.WithTimeout(ctx, 20*time.Second)
 		defer cancelList()
 

@@ -48,12 +48,11 @@ const (
 )
 
 const (
-	focusSidebar focusTarget = "sidebar"
-	focusMain    focusTarget = "main"
-	focusDetail  focusTarget = "detail"
-	focusSearch  focusTarget = "search"
-	focusHelp    focusTarget = "help"
-	focusError   focusTarget = "error"
+	focusMain   focusTarget = "main"
+	focusDetail focusTarget = "detail"
+	focusSearch focusTarget = "search"
+	focusHelp   focusTarget = "help"
+	focusError  focusTarget = "error"
 )
 
 const maxMarkdownRenderChars = 12000
@@ -237,9 +236,9 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.errorMessage != "" {
-			m.focus = focusError
 			switch msg.String() {
 			case "r":
+				m.focus = focusError
 				m.errorMessage = ""
 				m.focus = focusMain
 				if m.view == PrimaryView {
@@ -247,6 +246,7 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m.startLoadCurrentView()
 			case "esc":
+				m.focus = focusError
 				m.errorMessage = ""
 				m.focus = focusMain
 				return m, nil
@@ -537,7 +537,7 @@ func (m DashboardModel) View() string {
 		return m.styles.app.Render(lipgloss.JoinVertical(lipgloss.Left, detail, status))
 	}
 
-	navWidth := minInt(28, max(22, totalWidth/4))
+	navWidth := min(28, max(22, totalWidth/4))
 	mainWidth := max(36, totalWidth-navWidth)
 	sidebar := m.renderSidebar(navWidth, contentHeight)
 	main := m.renderMain(mainWidth, contentHeight)
@@ -664,7 +664,7 @@ func (m DashboardModel) renderIssueDetailFullscreen(width int, height int) strin
 	if start < 0 {
 		start = 0
 	}
-	end := minInt(len(detailLines), start+bodyRows)
+	end := min(len(detailLines), start+bodyRows)
 	lines = append(lines, withVerticalScroll(detailLines[start:end], viewportWidth, start, bodyRows, len(detailLines))...)
 	if len(detailLines) > bodyRows {
 		footer := fmt.Sprintf("%d-%d of %d", start+1, end, len(detailLines))
@@ -702,20 +702,10 @@ func (m DashboardModel) renderStatusBar(width int) string {
 }
 
 func (m DashboardModel) focusLabel() string {
-	switch m.focus {
-	case focusSidebar:
-		return "sidebar"
-	case focusDetail:
-		return "detail"
-	case focusSearch:
-		return "search"
-	case focusHelp:
-		return "help"
-	case focusError:
-		return "error"
-	default:
+	if m.focus == "" {
 		return "main"
 	}
+	return string(m.focus)
 }
 
 func (m DashboardModel) renderHelp() string {
@@ -934,7 +924,7 @@ func (m DashboardModel) renderMergeRequestDetailFullscreen(width int, height int
 	if start < 0 {
 		start = 0
 	}
-	end := minInt(len(detailLines), start+bodyRows)
+	end := min(len(detailLines), start+bodyRows)
 	lines = append(lines, withVerticalScroll(detailLines[start:end], viewportWidth, start, bodyRows, len(detailLines))...)
 	if len(detailLines) > bodyRows {
 		footer := fmt.Sprintf("%d-%d of %d", start+1, end, len(detailLines))
@@ -1708,20 +1698,6 @@ func prevIssueState(current IssueState) IssueState {
 	default:
 		return IssueStateClosed
 	}
-}
-
-func max(a int, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a int, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func fitLine(input string, width int) string {

@@ -30,7 +30,7 @@ func TestRenderNonInteractiveSummary(t *testing.T) {
 	}
 	for _, check := range checks {
 		if !strings.Contains(text, check) {
-			t.Fatalf("expected output to contain %q, got %q", check, text)
+			t.Errorf("expected output to contain %q, got %q", check, text)
 		}
 	}
 }

@@ -123,7 +123,7 @@ func TestDashboardPrimaryRoutesToMergeRequests(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
 	model := updated.(DashboardModel)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(DashboardModel)
@@ -137,7 +137,7 @@ func TestDashboardEscReturnsToPrimaryFromMergeRequests(t *testing.T) {
 	t.Parallel()
 
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
 	model := updated.(DashboardModel)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(DashboardModel)
@@ -617,11 +617,9 @@ func TestDashboardStatusShowsFocus(t *testing.T) {
 	m := NewDashboardModel(&stubProvider{}, DashboardContext{ProjectPath: "group/project", Host: "https://gitlab.example.com", Connection: "Connected"})
 	m.width = 120
 	m.errorMessage = "load failed"
+	m.focus = focusError
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	model := updated.(DashboardModel)
-
-	status := model.renderStatusBar(110)
+	status := m.renderStatusBar(110)
 	if !strings.Contains(status, "focus:error") {
 		t.Fatalf("expected status to show error focus, got %q", status)
 	}
