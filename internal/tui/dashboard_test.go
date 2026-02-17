@@ -585,3 +585,29 @@ func TestDashboardMergeRequestDetailOpensAndCloses(t *testing.T) {
 		t.Fatal("expected merge request detail view to close")
 	}
 }
+
+func TestListRowWidthTracksAvailableWidth(t *testing.T) {
+	t.Parallel()
+
+	if got := listRowWidth(80); got != 78 {
+		t.Fatalf("listRowWidth(80) = %d want %d", got, 78)
+	}
+	if got := listRowWidth(3); got != 1 {
+		t.Fatalf("listRowWidth(3) = %d want %d", got, 1)
+	}
+}
+
+func TestListTitleTruncationBasedOnRowWidth(t *testing.T) {
+	t.Parallel()
+
+	long := "Issue and merge request titles should only truncate when width is narrow"
+	wide := listRowWidth(120)
+	narrow := listRowWidth(24)
+
+	if got := fitLine(long, wide); got != long {
+		t.Fatalf("wide fitLine truncated title: %q", got)
+	}
+	if got := fitLine(long, narrow); got == long {
+		t.Fatalf("narrow fitLine did not truncate title: %q", got)
+	}
+}

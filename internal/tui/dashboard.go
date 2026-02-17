@@ -542,10 +542,9 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, "  No items")
 	} else if m.view != PrimaryView {
 		contentWidth := max(10, width-8)
-		rowWidth := max(1, contentWidth-2)
+		rowWidth := listRowWidth(contentWidth)
 		rowsPerItem := 1
 		if m.view == IssuesView {
-			rowWidth = minInt(rowWidth, 52)
 			rowsPerItem = 2
 		} else if m.view == MergeRequestsView {
 			rowsPerItem = 2
@@ -1605,6 +1604,10 @@ func fitLine(input string, width int) string {
 		return string(runes[:width])
 	}
 	return string(runes[:width-1]) + "…"
+}
+
+func listRowWidth(contentWidth int) int {
+	return max(1, contentWidth-2)
 }
 
 func visibleRange(total int, selected int, capacity int) (int, int) {
