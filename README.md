@@ -30,8 +30,13 @@ and token, then saves config to `~/.config/lazygitlab/config.yml`.
 
 - LazyGitLab now uses adaptive TUI colors so the interface follows your current
   terminal light/dark theme.
+- The app also tries to follow terminal foreground/background colors from
+  `COLORFGBG` when available.
 - Optional accent override: set `LAZYGITLAB_ACCENT` to a hex color (for example
   `#00aaff`) or ANSI color index (for example `39`).
+- Optional explicit shell theme colors:
+  - `LAZYGITLAB_THEME_FG` (hex or ANSI index)
+  - `LAZYGITLAB_THEME_BG` (hex or ANSI index)
 
 ## Flags
 
