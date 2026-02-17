@@ -173,20 +173,21 @@ func (m instancePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m instancePickerModel) View() string {
+	s := newStyles()
 	rows := []string{
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("Select a GitLab instance"),
+		s.title.Render("Select a GitLab instance"),
 		"",
 	}
 
 	if len(m.instances) == 0 {
-		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("No configured instances found"))
+		rows = append(rows, s.dim.Render("No configured instances found"))
 	} else {
 		for i, instance := range m.instances {
 			prefix := "  "
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+			style := s.normalRow
 			if i == m.selected {
 				prefix = "› "
-				style = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+				style = s.selectedRow
 			}
 
 			label := instance.Label
@@ -202,7 +203,7 @@ func (m instancePickerModel) View() string {
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("39")).
+		BorderForeground(resolveAccentColor()).
 		Padding(1, 2).
 		Width(80)
 
@@ -233,24 +234,25 @@ func (m *pickerModel) applyFilter() {
 }
 
 func (m pickerModel) View() string {
+	s := newStyles()
 	rows := []string{
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("Select a GitLab project"),
+		s.title.Render("Select a GitLab project"),
 		"",
 		m.input.View(),
 		"",
 	}
 
 	if len(m.filtered) == 0 {
-		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("No matching projects"))
+		rows = append(rows, s.dim.Render("No matching projects"))
 	} else {
 		limit := min(12, len(m.filtered))
 		for i := 0; i < limit; i++ {
 			p := m.filtered[i]
 			prefix := "  "
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+			style := s.normalRow
 			if i == m.selected {
 				prefix = "› "
-				style = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+				style = s.selectedRow
 			}
 			rows = append(rows, style.Render(prefix+p.PathWithNamespace))
 		}
@@ -260,7 +262,7 @@ func (m pickerModel) View() string {
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("39")).
+		BorderForeground(resolveAccentColor()).
 		Padding(1, 2).
 		Width(80)
 

@@ -139,7 +139,8 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m setupModel) View() string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39")).Render("LazyGitLab First-Run Setup")
+	s := newStyles()
+	header := s.title.Render("LazyGitLab First-Run Setup")
 	content := []string{
 		header,
 		"",
@@ -153,12 +154,12 @@ func (m setupModel) View() string {
 	}
 
 	if m.err != "" {
-		content = append(content, "", lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(m.err))
+		content = append(content, "", s.errorText.Render(m.err))
 	}
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("39")).
+		BorderForeground(resolveAccentColor()).
 		Padding(1, 2).
 		Width(72)
 
