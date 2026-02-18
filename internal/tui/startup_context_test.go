@@ -105,10 +105,8 @@ func TestStartupContextSelectContextLoadsProjectsAndReturnsSelection(t *testing.
 		t.Fatal("expected project load command")
 	}
 
-	updated, _ = model.Update(startupProjectsLoadedMsg{
-		requestID: model.requestID,
-		projects:  []StartupProjectOption{{Path: "group/project-one"}, {Path: "group/project-two"}},
-	})
+	loaded := firstStartupProjectsLoadedMsg(t, cmd())
+	updated, _ = model.Update(loaded)
 	model = updated.(startupContextModel)
 	if model.stage != startupStageProject {
 		t.Fatalf("stage = %v want %v", model.stage, startupStageProject)
@@ -128,6 +126,28 @@ func TestStartupContextSelectContextLoadsProjectsAndReturnsSelection(t *testing.
 	if model.choice.ProjectPath != "group/project-one" {
 		t.Fatalf("project path = %q want %q", model.choice.ProjectPath, "group/project-one")
 	}
+}
+
+func firstStartupProjectsLoadedMsg(t *testing.T, msg tea.Msg) startupProjectsLoadedMsg {
+	t.Helper()
+
+	switch loaded := msg.(type) {
+	case startupProjectsLoadedMsg:
+		return loaded
+	case tea.BatchMsg:
+		for _, cmd := range loaded {
+			if cmd == nil {
+				continue
+			}
+			nested := cmd()
+			if projectMsg, ok := nested.(startupProjectsLoadedMsg); ok {
+				return projectMsg
+			}
+		}
+	}
+
+	t.Fatalf("expected startupProjectsLoadedMsg, got %T", msg)
+	return startupProjectsLoadedMsg{}
 }
 
 func TestStartupContextProjectEscReturnsToInstanceStage(t *testing.T) {
