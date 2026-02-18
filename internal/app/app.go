@@ -83,56 +83,103 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	if projectPath == "" {
-		projectPath = strings.TrimSpace(cfg.LastProject)
-		if projectPath != "" {
-			logger.Printf("using last known project: %s", projectPath)
-		}
-	}
-
-	if !interactive && projectPath == "" {
-		return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
-	}
-
 	selected := config.Instance{Host: cfg.Host, Token: cfg.Token}
 	if projectPath == "" {
 		if !interactive {
-			return errors.New("project picker requires an interactive terminal; pass --project")
-		}
-		instances, err := config.LoadInstances()
-		if err != nil {
-			return fmt.Errorf("load configured instances: %w", err)
-		}
+			projectPath = strings.TrimSpace(cfg.LastProject)
+			if projectPath == "" {
+				return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
+			}
+			logger.Printf("using last known project: %s", projectPath)
+		} else {
+			instances, err := config.LoadInstances()
+			if err != nil {
+				return fmt.Errorf("load configured instances: %w", err)
+			}
+			if len(instances) == 0 {
+				instances = append(instances, selected)
+			}
 
-		if len(instances) == 0 {
-			instances = append(instances, selected)
-		}
-
-		if len(instances) > 1 {
+			instanceByHost := make(map[string]config.Instance, len(instances))
 			options := make([]tui.InstanceOption, 0, len(instances))
 			for _, instance := range instances {
-				options = append(options, tui.InstanceOption{
-					Host:  instance.Host,
-					Label: formatInstanceLabel(instance.Host),
-				})
+				host := strings.TrimSpace(instance.Host)
+				token := strings.TrimSpace(instance.Token)
+				if host == "" || token == "" {
+					continue
+				}
+				instanceByHost[strings.ToLower(host)] = instance
+				options = append(options, tui.InstanceOption{Host: host, Label: formatInstanceLabel(host)})
 			}
 
-			chosen, pickErr := tui.RunInstancePicker(options)
-			if pickErr != nil {
-				if errors.Is(pickErr, tui.ErrCancelled) {
+			if len(options) == 0 {
+				return errors.New("no usable GitLab instance configuration found")
+			}
+
+			startupChoice, startupErr := tui.RunStartupContextFlow(tui.StartupContextFlowOptions{
+				LastProject: cfg.LastProject,
+				Instances:   options,
+				LoadProjects: func(instanceOption tui.InstanceOption) ([]tui.StartupProjectOption, error) {
+					instance, ok := instanceByHost[strings.ToLower(strings.TrimSpace(instanceOption.Host))]
+					if !ok {
+						return nil, fmt.Errorf("selected instance %q is unavailable", strings.TrimSpace(instanceOption.Host))
+					}
+
+					pickerClient, clientErr := gitlab.NewClient(instance.Token, instance.Host, logger)
+					if clientErr != nil {
+						return nil, clientErr
+					}
+
+					listCtx, cancelList := context.WithTimeout(ctx, 20*time.Second)
+					defer cancelList()
+
+					projects, listErr := pickerClient.ListProjects(listCtx, "")
+					if listErr != nil {
+						return nil, fmt.Errorf("load projects for picker (timeout 20s): %w", listErr)
+					}
+
+					projectOptions := make([]tui.StartupProjectOption, 0, len(projects))
+					for _, project := range projects {
+						if project == nil {
+							continue
+						}
+						path := strings.TrimSpace(project.PathWithNamespace)
+						if path == "" {
+							continue
+						}
+						projectOptions = append(projectOptions, tui.StartupProjectOption{Path: path, Label: path})
+					}
+
+					return projectOptions, nil
+				},
+			})
+			if startupErr != nil {
+				if errors.Is(startupErr, tui.ErrCancelled) {
+					return errors.New("no project selected")
+				}
+				return fmt.Errorf("startup context failed: %w", startupErr)
+			}
+
+			switch startupChoice.Action {
+			case tui.StartupActionUseLastProject:
+				projectPath = strings.TrimSpace(startupChoice.ProjectPath)
+				if projectPath == "" {
+					return errors.New("no project selected")
+				}
+				logger.Printf("using last known project: %s", projectPath)
+			case tui.StartupActionSelectContext:
+				instance, ok := instanceByHost[strings.ToLower(strings.TrimSpace(startupChoice.Instance.Host))]
+				if !ok {
 					return errors.New("no instance selected")
 				}
-				return fmt.Errorf("instance picker failed: %w", pickErr)
-			}
-
-			for _, instance := range instances {
-				if strings.EqualFold(instance.Host, chosen.Host) {
-					selected = instance
-					break
+				selected = instance
+				projectPath = strings.TrimSpace(startupChoice.ProjectPath)
+				if projectPath == "" {
+					return errors.New("no project selected")
 				}
+			default:
+				return errors.New("no project selected")
 			}
-		} else {
-			selected = instances[0]
 		}
 	}
 
@@ -156,22 +203,8 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("validate token: %w", err)
 	}
 
-	if projectPath == "" {
-		listCtx, cancelList := context.WithTimeout(ctx, 20*time.Second)
-		defer cancelList()
-
-		projects, listErr := client.ListProjects(listCtx, "")
-		if listErr != nil {
-			return fmt.Errorf("load projects for picker (timeout 20s): %w", listErr)
-		}
-
-		projectPath, err = tui.RunProjectPicker(projects)
-		if err != nil {
-			if errors.Is(err, tui.ErrCancelled) {
-				return errors.New("no project selected")
-			}
-			return fmt.Errorf("project picker failed: %w", err)
-		}
+	if strings.TrimSpace(projectPath) == "" {
+		return errors.New("no project selected")
 	}
 
 	cfg.LastProject = projectPath
