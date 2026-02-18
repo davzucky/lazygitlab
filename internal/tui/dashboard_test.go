@@ -690,3 +690,20 @@ func TestListTitleTruncationBasedOnRowWidth(t *testing.T) {
 		t.Fatalf("narrow fitLine did not truncate title: %q", got)
 	}
 }
+
+func TestFitLinePreservesANSISequences(t *testing.T) {
+	t.Parallel()
+
+	styled := "\x1b[31mabcdef\x1b[0m"
+	got := fitLine(styled, 4)
+
+	if stripANSI(got) != "abc…" {
+		t.Fatalf("expected visible text to truncate to abc…, got %q", stripANSI(got))
+	}
+	if len([]rune(stripANSI(got))) != 4 {
+		t.Fatalf("expected rendered visible width 4, got %d", len([]rune(stripANSI(got))))
+	}
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected ANSI sequences to be preserved, got %q", got)
+	}
+}
