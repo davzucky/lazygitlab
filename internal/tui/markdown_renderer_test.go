@@ -158,6 +158,9 @@ func TestRenderMarkdownStructuredTableNarrowWidth(t *testing.T) {
 	if len(lines) == 0 {
 		t.Fatal("expected structured markdown output")
 	}
+	if !containsLineWithPrefix(lines, "|") {
+		t.Fatalf("expected table output with pipe-delimited lines, got %#v", lines)
+	}
 	for _, line := range lines {
 		clean := stripANSI(line)
 		if strings.TrimSpace(clean) == "" {
@@ -166,6 +169,23 @@ func TestRenderMarkdownStructuredTableNarrowWidth(t *testing.T) {
 		if len([]rune(clean)) > width {
 			t.Fatalf("expected rendered table line width <= %d, got %d for line %q", width, len([]rune(clean)), clean)
 		}
+	}
+}
+
+func TestRenderMarkdownStructuredTableCodeCellKeepsContentWhenSpaceAllows(t *testing.T) {
+	input := strings.Join([]string{
+		"| Package | Type | Update | Change |",
+		"|---|---|---|---|",
+		"| gcc |  | patch | `15.2.0-r8` → `15.2.0-r9` |",
+	}, "\n")
+
+	lines := renderMarkdownStructured(input, 120)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "15.2...") {
+		t.Fatalf("expected code cell not to be aggressively truncated, got %#v", lines)
+	}
+	if !strings.Contains(joined, "`15.2.0-r8` → `15.2.0-r9`") {
+		t.Fatalf("expected full code change content in table cell, got %#v", lines)
 	}
 }
 

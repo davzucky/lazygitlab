@@ -275,7 +275,7 @@ func renderMarkdownTableRow(row ast.Node, source []byte) []string {
 		if !ok {
 			continue
 		}
-		value := strings.ReplaceAll(renderInlineChildren(cell, source), "\n", " ")
+		value := strings.ReplaceAll(extractNodeText(cell, source), "\n", " ")
 		columns = append(columns, strings.TrimSpace(value))
 	}
 	return columns
@@ -308,19 +308,20 @@ func normalizeTableRows(rows [][]string, columns int) [][]string {
 }
 
 func fitTableColumnWidths(rows [][]string, totalWidth int, columns int) []int {
-	if columns <= 0 {
+	if columns <= 0 || totalWidth <= 0 {
+		return nil
+	}
+	minimumWidth := 4*columns + 1
+	if totalWidth < minimumWidth {
 		return nil
 	}
 	available := totalWidth - (3*columns + 1)
-	if available <= 0 {
-		available = columns
-	}
 
 	widths := make([]int, columns)
 	for col := 0; col < columns; col++ {
 		maxWidth := 1
 		for _, row := range rows {
-			cellWidth := lipgloss.Width(stripANSI(row[col]))
+			cellWidth := lipgloss.Width(row[col])
 			if cellWidth > maxWidth {
 				maxWidth = cellWidth
 			}
@@ -392,7 +393,7 @@ func renderTableSeparator(widths []int, alignments []extast.Alignment, prefix st
 func alignTableCell(cell string, width int, alignment extast.Alignment) string {
 	trimmed := strings.TrimSpace(cell)
 	truncated := fitLine(trimmed, width)
-	padding := width - lipgloss.Width(stripANSI(truncated))
+	padding := width - lipgloss.Width(truncated)
 	if padding <= 0 {
 		return truncated
 	}
