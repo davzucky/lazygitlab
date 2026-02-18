@@ -83,18 +83,35 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
+	selected := config.Instance{Host: cfg.Host, Token: cfg.Token}
 	if projectPath == "" {
-		projectPath = strings.TrimSpace(cfg.LastProject)
-		if projectPath != "" {
+		if !interactive {
+			projectPath = strings.TrimSpace(cfg.LastProject)
+			if projectPath == "" {
+				return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
+			}
 			logger.Printf("using last known project: %s", projectPath)
+		}
+
+		if interactive {
+			startupChoice, startupErr := tui.RunStartupContextScreen(cfg.LastProject)
+			if startupErr != nil {
+				if errors.Is(startupErr, tui.ErrCancelled) {
+					return errors.New("no project selected")
+				}
+				return fmt.Errorf("startup context failed: %w", startupErr)
+			}
+
+			if startupChoice.Action == tui.StartupActionUseLastProject {
+				projectPath = strings.TrimSpace(cfg.LastProject)
+				if projectPath == "" {
+					return errors.New("no project selected")
+				}
+				logger.Printf("using last known project: %s", projectPath)
+			}
 		}
 	}
 
-	if !interactive && projectPath == "" {
-		return errors.New("no project detected in non-interactive mode; pass --project or set last project in config")
-	}
-
-	selected := config.Instance{Host: cfg.Host, Token: cfg.Token}
 	if projectPath == "" {
 		if !interactive {
 			return errors.New("project picker requires an interactive terminal; pass --project")
