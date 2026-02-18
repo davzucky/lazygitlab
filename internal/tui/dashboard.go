@@ -111,10 +111,10 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		provider:          provider,
 		ctx:               ctx,
 		styles:            newStyles(),
-		view:              PrimaryView,
+		view:              IssuesView,
 		width:             100,
 		height:            40,
-		loading:           false,
+		loading:           true,
 		spinner:           sp,
 		searchInput:       search,
 		issueState:        IssueStateOpened,
@@ -131,7 +131,10 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 }
 
 func (m DashboardModel) Init() tea.Cmd {
-	return m.spinner.Tick
+	return tea.Batch(
+		m.spinner.Tick,
+		m.loadCurrentViewCmd(m.requestID, true, 1),
+	)
 }
 
 func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -409,27 +412,6 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if msg.String() == "esc" && m.view != PrimaryView {
-			m.view = PrimaryView
-			m.focus = focusMain
-			m.selected = 0
-			m.loading = false
-			m.loadingMore = false
-			m.errorMessage = ""
-			m.issueDetail = false
-			m.mergeRequestDetail = false
-			m.detailScroll = 0
-			m.mergeRequestDetailScroll = 0
-			m.detailTab = issueDetailTabOverview
-			m.detailLoad = false
-			m.detailErr = ""
-			m.items = nil
-			return m, nil
-		}
-
-		if model, cmd, handled := m.handlePrimaryScreenKey(msg.String()); handled {
-			return model, cmd
-		}
 		if model, cmd, handled := m.handleIssueScreenKey(msg.String()); handled {
 			return model, cmd
 		}
@@ -452,60 +434,51 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected--
 			}
 		case "h", "left":
-			if m.view > PrimaryView {
-				m.view--
+			if m.view == MergeRequestsView {
+				m.view = IssuesView
 				m.selected = 0
-				if m.view == PrimaryView {
-					m.loading = false
-					m.items = nil
-					return m, nil
-				}
 				return m.startLoadCurrentView()
 			}
 		case "l", "right":
-			if m.view < MergeRequestsView {
-				m.view++
+			if m.view == IssuesView {
+				m.view = MergeRequestsView
 				m.selected = 0
 				return m.startLoadCurrentView()
 			}
 		case "tab":
-			if m.view < MergeRequestsView {
-				m.view++
+			if m.view == IssuesView {
+				m.view = MergeRequestsView
 			} else {
-				m.view = PrimaryView
+				m.view = IssuesView
 			}
 			m.selected = 0
-			if m.view == PrimaryView {
-				m.loading = false
-				m.items = nil
-				return m, nil
-			}
 			return m.startLoadCurrentView()
 		case "shift+tab":
-			if m.view > PrimaryView {
-				m.view--
+			if m.view == MergeRequestsView {
+				m.view = IssuesView
 			} else {
 				m.view = MergeRequestsView
 			}
 			m.selected = 0
-			if m.view == PrimaryView {
-				m.loading = false
-				m.items = nil
-				return m, nil
-			}
 			return m.startLoadCurrentView()
 		case "1":
-			m.view = PrimaryView
-			m.primaryIndex = 0
-			m.selected = 0
-			m.loading = false
-			m.items = nil
-			return m, nil
-		case "2":
+			if m.view == IssuesView {
+				return m, nil
+			}
 			m.view = IssuesView
 			m.selected = 0
 			return m.startLoadCurrentView()
+		case "2":
+			if m.view == MergeRequestsView {
+				return m, nil
+			}
+			m.view = MergeRequestsView
+			m.selected = 0
+			return m.startLoadCurrentView()
 		case "3":
+			if m.view == MergeRequestsView {
+				return m, nil
+			}
 			m.view = MergeRequestsView
 			m.selected = 0
 			return m.startLoadCurrentView()
@@ -547,9 +520,8 @@ func (m DashboardModel) renderSidebar(width int, height int) string {
 	items := []string{
 		m.styles.title.Render("Navigation"),
 		"",
-		m.navLabel(PrimaryView, fitLine("1. Primary", width-6)),
-		m.navLabel(IssuesView, fitLine("2. Issues", width-6)),
-		m.navLabel(MergeRequestsView, fitLine("3. Merge Requests", width-6)),
+		m.navLabel(IssuesView, fitLine("1. Issues", width-6)),
+		m.navLabel(MergeRequestsView, fitLine("2. Merge Requests", width-6)),
 		"",
 		m.styles.dim.Render("j/k or arrows to move"),
 		m.styles.dim.Render("h/l tab to switch"),
@@ -570,9 +542,7 @@ func (m DashboardModel) renderMain(width int, height int) string {
 	header := m.styles.header.Render(m.viewTitle())
 
 	lines := []string{header}
-	if m.view == PrimaryView {
-		lines = append(lines, m.renderPrimaryBody(width)...)
-	} else if m.view == IssuesView {
+	if m.view == IssuesView {
 		lines = append(lines, m.renderIssueBody(width)...)
 	} else {
 		lines = append(lines, m.renderMergeRequestBody(width)...)
@@ -582,14 +552,14 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
 	bodyRows := max(1, height-len(lines)-2)
-	if m.view != PrimaryView && m.loading {
+	if m.loading {
 		lines = append(lines, "  "+m.spinner.View()+" Loading...")
-	} else if m.view != PrimaryView && len(m.items) == 0 {
+	} else if len(m.items) == 0 {
 		lines = append(lines, "  No items")
-	} else if m.view != PrimaryView {
+	} else {
 		contentWidth := max(10, width-8)
 		lines = append(lines, m.renderListLines(contentWidth, bodyRows)...)
-		if (m.view == IssuesView || m.view == MergeRequestsView) && m.loadingMore {
+		if m.loadingMore {
 			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
 		}
 	}
@@ -679,8 +649,6 @@ func (m DashboardModel) renderStatusBar(width int) string {
 	status += fmt.Sprintf(" | focus:%s", m.focusLabel())
 	if m.loading {
 		status += " | loading"
-	} else if m.view == PrimaryView {
-		status += " | home"
 	} else if m.view == IssuesView {
 		status += fmt.Sprintf(" | issues: %s", issueStateLabel(m.issueState))
 		if strings.TrimSpace(m.issueSearch) != "" {
@@ -713,14 +681,12 @@ func (m DashboardModel) renderHelp() string {
 		"Navigation:",
 		"  j/k or up/down      Move in list/selection",
 		"  h/l or left/right   Switch view",
-		"  tab/shift+tab       Cycle views",
+		"  tab/shift+tab       Toggle issues and merge requests",
+		"  1/2                 Jump to issues/merge requests",
 		"",
-		"Primary:",
+		"Issues:",
 	}
-	for _, hint := range primaryKeyHints {
-		lines = append(lines, "  "+hint)
-	}
-	lines = append(lines, "", "Issues:")
+
 	for _, hint := range issueKeyHints {
 		lines = append(lines, "  "+hint)
 	}
@@ -731,7 +697,7 @@ func (m DashboardModel) renderHelp() string {
 	lines = append(lines,
 		"",
 		"Common:",
-		"  esc                 Close detail or return Primary",
+		"  esc                 Close detail",
 		"  d/a/c               Jump Detail/Activities/Comments",
 		"  /                   Search issues",
 		"  r                   Retry load (errors)",
@@ -1530,14 +1496,12 @@ func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, page int
 
 func (m DashboardModel) viewTitle() string {
 	switch m.view {
-	case PrimaryView:
-		return "Primary"
 	case IssuesView:
 		return "Issues"
 	case MergeRequestsView:
 		return "Merge Requests"
 	default:
-		return "Unknown"
+		return "Issues"
 	}
 }
 
