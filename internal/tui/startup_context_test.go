@@ -147,3 +147,48 @@ func TestStartupContextProjectEscReturnsToInstanceStage(t *testing.T) {
 		t.Fatalf("stage = %v want %v", model.stage, startupStageInstance)
 	}
 }
+
+func TestStartupContextProjectTypingRuneUpdatesSearch(t *testing.T) {
+	t.Parallel()
+
+	instance := InstanceOption{Host: "https://gitlab.com/api/v4", Label: "gitlab.com"}
+	m := newStartupContextModel(StartupContextFlowOptions{Instances: []InstanceOption{instance}})
+	m.stage = startupStageProject
+	m.selectedInstance = instance
+	m.projects = []StartupProjectOption{{Path: "group/yarn-service"}, {Path: "group/project"}}
+	m.applyProjectFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	model := updated.(startupContextModel)
+
+	if model.searchInput.Value() != "y" {
+		t.Fatalf("search value = %q want %q", model.searchInput.Value(), "y")
+	}
+	if len(model.filteredProjects) != 1 {
+		t.Fatalf("filtered count = %d want %d", len(model.filteredProjects), 1)
+	}
+	if model.filteredProjects[0].Path != "group/yarn-service" {
+		t.Fatalf("filtered path = %q want %q", model.filteredProjects[0].Path, "group/yarn-service")
+	}
+}
+
+func TestStartupContextProjectQIsSearchInputNotCancel(t *testing.T) {
+	t.Parallel()
+
+	instance := InstanceOption{Host: "https://gitlab.com/api/v4", Label: "gitlab.com"}
+	m := newStartupContextModel(StartupContextFlowOptions{Instances: []InstanceOption{instance}})
+	m.stage = startupStageProject
+	m.selectedInstance = instance
+	m.projects = []StartupProjectOption{{Path: "group/query-service"}, {Path: "group/project"}}
+	m.applyProjectFilter()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	model := updated.(startupContextModel)
+
+	if model.cancelled {
+		t.Fatal("did not expect model to be cancelled")
+	}
+	if model.searchInput.Value() != "q" {
+		t.Fatalf("search value = %q want %q", model.searchInput.Value(), "q")
+	}
+}

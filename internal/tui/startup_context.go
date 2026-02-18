@@ -87,7 +87,10 @@ func RunStartupContextFlow(opts StartupContextFlowOptions) (StartupContextChoice
 		return StartupContextChoice{}, err
 	}
 
-	final := out.(startupContextModel)
+	final, ok := out.(startupContextModel)
+	if !ok {
+		return StartupContextChoice{}, fmt.Errorf("unexpected model type from program: %T", out)
+	}
 	if final.cancelled {
 		return StartupContextChoice{}, ErrCancelled
 	}
@@ -310,20 +313,27 @@ func (m startupContextModel) updateLoading(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 }
 
 func (m startupContextModel) updateProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes {
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.applyProjectFilter()
+		return m, cmd
+	}
+
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		m.cancelled = true
 		return m, tea.Quit
 	case "esc":
 		m.stage = startupStageInstance
 		m.errMessage = ""
 		return m, nil
-	case "down", "j", "tab":
+	case "down", "tab":
 		if m.projectSelected < len(m.filteredProjects)-1 {
 			m.projectSelected++
 		}
 		return m, nil
-	case "up", "k", "shift+tab":
+	case "up", "shift+tab":
 		if m.projectSelected > 0 {
 			m.projectSelected--
 		}
@@ -344,10 +354,7 @@ func (m startupContextModel) updateProject(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, tea.Quit
 	}
 
-	var cmd tea.Cmd
-	m.searchInput, cmd = m.searchInput.Update(msg)
-	m.applyProjectFilter()
-	return m, cmd
+	return m, nil
 }
 
 func (m startupContextModel) loadProjectsCmd(instance InstanceOption, requestID int) tea.Cmd {
@@ -559,7 +566,7 @@ func (m startupContextModel) renderProjectView() string {
 		}
 	}
 
-	rows = append(rows, "", "Enter select | j/k move | Tab cycle | Esc back | q cancel")
+	rows = append(rows, "", "Type to filter | Enter select | arrows/tab move | Esc back | Ctrl+C cancel")
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
