@@ -243,8 +243,9 @@ func (m pickerModel) View() string {
 	if len(m.filtered) == 0 {
 		rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("No matching projects"))
 	} else {
-		limit := min(12, len(m.filtered))
-		for i := 0; i < limit; i++ {
+		const windowSize = 12
+		start, end := visibleRange(len(m.filtered), m.selected, windowSize)
+		for i := start; i < end; i++ {
 			p := m.filtered[i]
 			prefix := "  "
 			style := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
@@ -253,6 +254,11 @@ func (m pickerModel) View() string {
 				style = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 			}
 			rows = append(rows, style.Render(prefix+p.PathWithNamespace))
+		}
+
+		if len(m.filtered) > windowSize {
+			rows = append(rows, "")
+			rows = append(rows, lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(fmt.Sprintf("%d-%d of %d", start+1, end, len(m.filtered))))
 		}
 	}
 
