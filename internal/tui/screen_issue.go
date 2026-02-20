@@ -5,6 +5,7 @@ import tea "github.com/charmbracelet/bubbletea"
 var issueKeyHints = []string{
 	"enter: open issue details",
 	"/: search",
+	"tab: autocomplete",
 	"[: prev state",
 	"]: next state",
 	"o/c/a: open/closed/all",
@@ -30,11 +31,8 @@ func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bo
 			return m, tea.Batch(cmd, m.preloadMarkdownCmd()), true
 		}
 	case "/":
-		m.searchMode = true
-		m.searchInput.Focus()
-		m.searchInput.SetValue(m.issueSearch)
-		m.searchInput.CursorEnd()
-		return m, nil, true
+		m = m.openSearch(IssuesView)
+		return m, m.loadSearchMetadataCmd(IssuesView), true
 	case "[":
 		m.issueState = prevIssueState(m.issueState)
 		m.selected = 0

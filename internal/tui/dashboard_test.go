@@ -15,13 +15,15 @@ type issueCall struct {
 }
 
 type mergeRequestCall struct {
-	State MergeRequestState
-	Page  int
+	State  MergeRequestState
+	Search string
+	Page   int
 }
 
 type stubProvider struct {
 	issueCalls        []issueCall
 	mergeRequestCalls []mergeRequestCall
+	searchMetadata    SearchMetadata
 }
 
 func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueResult, error) {
@@ -33,7 +35,7 @@ func (s *stubProvider) LoadIssues(_ context.Context, query IssueQuery) (IssueRes
 }
 
 func (s *stubProvider) LoadMergeRequests(_ context.Context, query MergeRequestQuery) (MergeRequestResult, error) {
-	s.mergeRequestCalls = append(s.mergeRequestCalls, mergeRequestCall{State: query.State, Page: query.Page})
+	s.mergeRequestCalls = append(s.mergeRequestCalls, mergeRequestCall{State: query.State, Search: query.Search, Page: query.Page})
 	if query.State == "" {
 		query.State = MergeRequestStateOpened
 	}
@@ -75,6 +77,10 @@ func (s *stubProvider) LoadIssueDetailData(context.Context, int64) (IssueDetailD
 		Activities: []IssueActivity{{Actor: "alice", CreatedAt: "2026-01-02 10:00 UTC", Action: "closed"}},
 		Comments:   []IssueComment{{Author: "bob", CreatedAt: "2026-01-02 10:05 UTC", Body: "**hello**"}},
 	}, nil
+}
+
+func (s *stubProvider) LoadSearchMetadata(context.Context, ViewMode) (SearchMetadata, error) {
+	return s.searchMetadata, nil
 }
 
 func TestDashboardViewSwitches(t *testing.T) {
@@ -331,6 +337,122 @@ func TestDashboardIssueSearchAppliesOnEnter(t *testing.T) {
 	}
 	if provider.issueCalls[0].Search != "bug" {
 		t.Fatalf("call search = %q want %q", provider.issueCalls[0].Search, "bug")
+	}
+}
+
+func TestDashboardMergeRequestSearchAppliesOnEnter(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = MergeRequestsView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	if !model.searchMode {
+		t.Fatal("expected search mode")
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("author:alice")})
+	model = updated.(DashboardModel)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(DashboardModel)
+	if model.mergeRequestSearch != "author:alice" {
+		t.Fatalf("search = %q want %q", model.mergeRequestSearch, "author:alice")
+	}
+	if cmd == nil {
+		t.Fatal("expected search reload command")
+	}
+
+	_ = cmd()
+	if len(provider.mergeRequestCalls) == 0 {
+		t.Fatal("expected merge request load call")
+	}
+	if provider.mergeRequestCalls[0].Search != "author:alice" {
+		t.Fatalf("call search = %q want %q", provider.mergeRequestCalls[0].Search, "author:alice")
+	}
+}
+
+func TestDashboardSearchIncludesMetadataSuggestions(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+	m.items = []ListItem{{ID: 11, Title: "Issue one", Issue: &IssueDetails{IID: 101, State: "opened", Author: "Alice", AuthorLogin: "alice", Assignees: []string{"Bob"}, AssigneeLogins: []string{"bob"}, Labels: []string{"backend"}, Milestone: "Sprint 1", Description: "first issue"}}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	suggestions := model.searchInput.AvailableSuggestions()
+	joined := strings.Join(suggestions, " ")
+
+	for _, expected := range []string{"author:", "author:alice", "assignee:bob", "label:backend", "milestone:Sprint 1"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected suggestions to include %q, got %#v", expected, suggestions)
+		}
+	}
+}
+
+func TestDashboardSearchAutocompleteCompletesCurrentToken(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("aut")})
+	model = updated.(DashboardModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.searchInput.Value() != "author:" {
+		t.Fatalf("autocomplete value = %q want %q", model.searchInput.Value(), "author:")
+	}
+}
+
+func TestDashboardSearchAutocompleteCompletesLastToken(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bug aut")})
+	model = updated.(DashboardModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.searchInput.Value() != "bug author:" {
+		t.Fatalf("autocomplete value = %q want %q", model.searchInput.Value(), "bug author:")
+	}
+}
+
+func TestDashboardSearchMetadataFromProviderAddsSuggestions(t *testing.T) {
+	t.Parallel()
+
+	provider := &stubProvider{searchMetadata: SearchMetadata{Authors: []SearchUser{{Name: "Remote Alice", Username: "4f8b8f90-aaaa-bbbb-cccc-1d2e3f4a5b6c"}}}}
+	m := NewDashboardModel(provider, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	if cmd == nil {
+		t.Fatal("expected metadata load command")
+	}
+	msg := cmd()
+	updated, _ = model.Update(msg)
+	model = updated.(DashboardModel)
+
+	suggestions := model.searchInput.AvailableSuggestions()
+	joined := strings.Join(suggestions, " ")
+	if !strings.Contains(joined, "author:Remote Alice") {
+		t.Fatalf("expected remote author suggestion, got %#v", suggestions)
 	}
 }
 
