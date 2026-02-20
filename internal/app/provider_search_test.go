@@ -141,7 +141,7 @@ func TestProviderResolvesAuthorNameToUsername(t *testing.T) {
 	client := &captureClient{members: []*gl.ProjectMember{{Name: "Alice Doe", Username: "d2db03f2-aaaa-bbbb-cccc-f59ec9974ed2"}}}
 	provider := NewProvider(client, "group/project")
 
-	_, err := provider.LoadIssues(context.Background(), tui.IssueQuery{State: tui.IssueStateOpened, Search: "author:\"Alice Doe\""})
+	_, err := provider.LoadIssues(context.Background(), tui.IssueQuery{State: tui.IssueStateOpened, Search: "author:Alice Doe label:backend"})
 	if err != nil {
 		t.Fatalf("LoadIssues() error = %v", err)
 	}

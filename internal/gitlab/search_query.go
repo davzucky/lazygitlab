@@ -15,25 +15,35 @@ func ParseSearchQuery(raw string) SearchQuery {
 	query := SearchQuery{}
 	textTerms := make([]string, 0, len(tokens))
 
-	for _, token := range tokens {
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
 		trimmed := strings.TrimSpace(token)
 		if trimmed == "" {
 			continue
 		}
-		key, value, ok := strings.Cut(trimmed, ":")
+		key, value, allowExpand, ok := parseQualifierToken(trimmed)
 		if !ok {
 			textTerms = append(textTerms, trimmed)
 			continue
 		}
-
-		k := strings.ToLower(strings.TrimSpace(key))
-		v := strings.TrimSpace(value)
-		if v == "" {
-			textTerms = append(textTerms, trimmed)
-			continue
+		v := value
+		for allowExpand && i+1 < len(tokens) {
+			next := strings.TrimSpace(tokens[i+1])
+			if next == "" {
+				i++
+				continue
+			}
+			if _, _, _, isQualifier := parseQualifierToken(next); isQualifier {
+				break
+			}
+			if strings.Contains(next, ":") {
+				break
+			}
+			v = strings.TrimSpace(v + " " + next)
+			i++
 		}
 
-		switch k {
+		switch key {
 		case "author":
 			query.Author = v
 		case "assignee":
@@ -50,6 +60,29 @@ func ParseSearchQuery(raw string) SearchQuery {
 	query.Text = strings.TrimSpace(strings.Join(textTerms, " "))
 	query.Labels = uniqueNonEmpty(query.Labels)
 	return query
+}
+
+func parseQualifierToken(token string) (string, string, bool, bool) {
+	key, value, ok := strings.Cut(token, ":")
+	if !ok {
+		return "", "", false, false
+	}
+	k := strings.ToLower(strings.TrimSpace(key))
+	if k != "author" && k != "assignee" && k != "label" && k != "milestone" {
+		return "", "", false, false
+	}
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return "", "", false, false
+	}
+	if strings.HasPrefix(v, "\"") && strings.HasSuffix(v, "\"") && len(v) >= 2 {
+		unquoted := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(v, "\""), "\""))
+		if unquoted == "" {
+			return "", "", false, false
+		}
+		return k, unquoted, false, true
+	}
+	return k, v, true, true
 }
 
 func splitSearchTokens(raw string) []string {
@@ -75,6 +108,7 @@ func splitSearchTokens(raw string) []string {
 		switch {
 		case r == '"':
 			inQuote = !inQuote
+			current.WriteRune(r)
 		case !inQuote && (r == ' ' || r == '\t' || r == '\n'):
 			flush()
 		default:

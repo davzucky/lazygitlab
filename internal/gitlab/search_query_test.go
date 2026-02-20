@@ -40,6 +40,19 @@ func TestParseSearchQueryQuotedMilestoneAndText(t *testing.T) {
 	}
 }
 
+func TestParseSearchQueryUnquotedMultiWordQualifier(t *testing.T) {
+	t.Parallel()
+
+	query := ParseSearchQuery("author:Alice Doe label:backend")
+
+	if query.Author != "Alice Doe" {
+		t.Fatalf("author = %q want %q", query.Author, "Alice Doe")
+	}
+	if !reflect.DeepEqual(query.Labels, []string{"backend"}) {
+		t.Fatalf("labels = %#v want %#v", query.Labels, []string{"backend"})
+	}
+}
+
 func TestParseSearchQueryUnknownQualifierFallsBackToText(t *testing.T) {
 	t.Parallel()
 

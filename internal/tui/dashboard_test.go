@@ -387,7 +387,7 @@ func TestDashboardSearchIncludesMetadataSuggestions(t *testing.T) {
 	suggestions := model.searchInput.AvailableSuggestions()
 	joined := strings.Join(suggestions, " ")
 
-	for _, expected := range []string{"author:", "author:alice", "assignee:bob", "label:backend", "milestone:\"Sprint 1\""} {
+	for _, expected := range []string{"author:", "author:alice", "assignee:bob", "label:backend", "milestone:Sprint 1"} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("expected suggestions to include %q, got %#v", expected, suggestions)
 		}
@@ -451,7 +451,7 @@ func TestDashboardSearchMetadataFromProviderAddsSuggestions(t *testing.T) {
 
 	suggestions := model.searchInput.AvailableSuggestions()
 	joined := strings.Join(suggestions, " ")
-	if !strings.Contains(joined, "author:\"Remote Alice\"") {
+	if !strings.Contains(joined, "author:Remote Alice") {
 		t.Fatalf("expected remote author suggestion, got %#v", suggestions)
 	}
 }

@@ -1735,13 +1735,6 @@ func qualifierSuggestion(key string, value string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if strings.ContainsAny(trimmed, " \t") {
-		replaced := strings.ReplaceAll(trimmed, "\"", "")
-		if replaced == "" {
-			return ""
-		}
-		return fmt.Sprintf("%s:\"%s\"", key, replaced)
-	}
 	return key + ":" + trimmed
 }
 
