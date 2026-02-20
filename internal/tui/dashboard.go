@@ -1702,13 +1702,13 @@ func (m DashboardModel) searchSuggestions(view ViewMode) []string {
 	}
 
 	for _, author := range m.searchMetadata.Authors {
-		if trimmed := strings.TrimSpace(author); trimmed != "" {
-			unique["author:"+trimmed] = struct{}{}
+		if suggestion := qualifierSuggestion("author", userDisplayValue(author)); suggestion != "" {
+			unique[suggestion] = struct{}{}
 		}
 	}
 	for _, assignee := range m.searchMetadata.Assignees {
-		if trimmed := strings.TrimSpace(assignee); trimmed != "" {
-			unique["assignee:"+trimmed] = struct{}{}
+		if suggestion := qualifierSuggestion("assignee", userDisplayValue(assignee)); suggestion != "" {
+			unique[suggestion] = struct{}{}
 		}
 	}
 	for _, label := range m.searchMetadata.Labels {
@@ -1743,6 +1743,13 @@ func qualifierSuggestion(key string, value string) string {
 		return fmt.Sprintf("%s:\"%s\"", key, replaced)
 	}
 	return key + ":" + trimmed
+}
+
+func userDisplayValue(user SearchUser) string {
+	if trimmed := strings.TrimSpace(user.Name); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(user.Username)
 }
 
 func (m *DashboardModel) resetSearchCompletionState() {

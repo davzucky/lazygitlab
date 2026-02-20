@@ -121,16 +121,32 @@ func TestProviderLoadsSearchMetadataFromGitLab(t *testing.T) {
 		t.Fatalf("LoadSearchMetadata() error = %v", err)
 	}
 
-	if len(metadata.Authors) != 2 || metadata.Authors[0] != "alice" || metadata.Authors[1] != "bob" {
-		t.Fatalf("Authors = %#v want %#v", metadata.Authors, []string{"alice", "bob"})
+	if len(metadata.Authors) != 2 || metadata.Authors[0].Username != "alice" || metadata.Authors[1].Username != "bob" {
+		t.Fatalf("Authors = %#v", metadata.Authors)
 	}
-	if len(metadata.Assignees) != 2 || metadata.Assignees[0] != "alice" || metadata.Assignees[1] != "bob" {
-		t.Fatalf("Assignees = %#v want %#v", metadata.Assignees, []string{"alice", "bob"})
+	if len(metadata.Assignees) != 2 || metadata.Assignees[0].Username != "alice" || metadata.Assignees[1].Username != "bob" {
+		t.Fatalf("Assignees = %#v", metadata.Assignees)
 	}
 	if len(metadata.Labels) != 2 || metadata.Labels[0] != "backend" || metadata.Labels[1] != "ui" {
 		t.Fatalf("Labels = %#v want %#v", metadata.Labels, []string{"backend", "ui"})
 	}
 	if len(metadata.Milestones) != 1 || metadata.Milestones[0] != "Sprint 1" {
 		t.Fatalf("Milestones = %#v want %#v", metadata.Milestones, []string{"Sprint 1"})
+	}
+}
+
+func TestProviderResolvesAuthorNameToUsername(t *testing.T) {
+	t.Parallel()
+
+	client := &captureClient{members: []*gl.ProjectMember{{Name: "Alice Doe", Username: "d2db03f2-aaaa-bbbb-cccc-f59ec9974ed2"}}}
+	provider := NewProvider(client, "group/project")
+
+	_, err := provider.LoadIssues(context.Background(), tui.IssueQuery{State: tui.IssueStateOpened, Search: "author:\"Alice Doe\""})
+	if err != nil {
+		t.Fatalf("LoadIssues() error = %v", err)
+	}
+
+	if client.issueOpts.AuthorUsername != "d2db03f2-aaaa-bbbb-cccc-f59ec9974ed2" {
+		t.Fatalf("AuthorUsername = %q", client.issueOpts.AuthorUsername)
 	}
 }

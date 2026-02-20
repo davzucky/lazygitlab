@@ -9,6 +9,7 @@ import (
 
 	"github.com/davzucky/lazygitlab/internal/gitlab"
 	"github.com/davzucky/lazygitlab/internal/tui"
+	gl "gitlab.com/gitlab-org/api/client-go"
 )
 
 type Provider struct {
@@ -44,12 +45,20 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 		return tui.IssueResult{}, fmt.Errorf("no project context selected")
 	}
 	parsed := gitlab.ParseSearchQuery(query.Search)
+	authorUsername, assigneeUsername := parsed.Author, parsed.Assignee
+	if strings.TrimSpace(parsed.Author) != "" || strings.TrimSpace(parsed.Assignee) != "" {
+		members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
+		if membersErr == nil {
+			authorUsername = resolveMemberUsername(parsed.Author, members)
+			assigneeUsername = resolveMemberUsername(parsed.Assignee, members)
+		}
+	}
 
 	issues, hasNextPage, err := p.client.ListIssues(ctx, p.projectPath, gitlab.IssueListOptions{
 		State:            string(query.State),
 		Search:           parsed.Text,
-		AuthorUsername:   parsed.Author,
-		AssigneeUsername: parsed.Assignee,
+		AuthorUsername:   authorUsername,
+		AssigneeUsername: assigneeUsername,
 		Labels:           parsed.Labels,
 		Milestone:        parsed.Milestone,
 		Page:             int64(query.Page),
@@ -130,12 +139,20 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 		query.PerPage = 25
 	}
 	parsed := gitlab.ParseSearchQuery(query.Search)
+	authorUsername, assigneeUsername := parsed.Author, parsed.Assignee
+	if strings.TrimSpace(parsed.Author) != "" || strings.TrimSpace(parsed.Assignee) != "" {
+		members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
+		if membersErr == nil {
+			authorUsername = resolveMemberUsername(parsed.Author, members)
+			assigneeUsername = resolveMemberUsername(parsed.Assignee, members)
+		}
+	}
 
 	mrs, hasNextPage, err := p.client.ListMergeRequests(ctx, p.projectPath, gitlab.MergeRequestListOptions{
 		State:            state,
 		Search:           parsed.Text,
-		AuthorUsername:   parsed.Author,
-		AssigneeUsername: parsed.Assignee,
+		AuthorUsername:   authorUsername,
+		AssigneeUsername: assigneeUsername,
 		Labels:           parsed.Labels,
 		Milestone:        parsed.Milestone,
 		Page:             int64(query.Page),
@@ -220,19 +237,7 @@ func (p *Provider) LoadSearchMetadata(ctx context.Context, _ tui.ViewMode) (tui.
 		return tui.SearchMetadata{}, err
 	}
 
-	authors := make([]string, 0, len(members))
-	assignees := make([]string, 0, len(members))
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		username := strings.TrimSpace(member.Username)
-		if username == "" {
-			continue
-		}
-		authors = append(authors, username)
-		assignees = append(assignees, username)
-	}
+	users := uniqueUsers(members)
 
 	labelNames := make([]string, 0, len(labels))
 	for _, label := range labels {
@@ -257,8 +262,8 @@ func (p *Provider) LoadSearchMetadata(ctx context.Context, _ tui.ViewMode) (tui.
 	}
 
 	return tui.SearchMetadata{
-		Authors:    uniqueSorted(authors),
-		Assignees:  uniqueSorted(assignees),
+		Authors:    users,
+		Assignees:  users,
 		Labels:     uniqueSorted(labelNames),
 		Milestones: uniqueSorted(milestoneNames),
 	}, nil
@@ -374,4 +379,70 @@ func uniqueSorted(values []string) []string {
 		return nil
 	}
 	return unique
+}
+
+func uniqueUsers(members []*gl.ProjectMember) []tui.SearchUser {
+	if len(members) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(members))
+	users := make([]tui.SearchUser, 0, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		username := strings.TrimSpace(member.Username)
+		if username == "" {
+			continue
+		}
+		if _, ok := seen[username]; ok {
+			continue
+		}
+		seen[username] = struct{}{}
+		users = append(users, tui.SearchUser{Name: strings.TrimSpace(member.Name), Username: username})
+	}
+	sort.Slice(users, func(i int, j int) bool {
+		left := strings.ToLower(displaySearchUser(users[i]))
+		right := strings.ToLower(displaySearchUser(users[j]))
+		if left == right {
+			return users[i].Username < users[j].Username
+		}
+		return left < right
+	})
+	if len(users) == 0 {
+		return nil
+	}
+	return users
+}
+
+func displaySearchUser(user tui.SearchUser) string {
+	if strings.TrimSpace(user.Name) != "" {
+		return strings.TrimSpace(user.Name)
+	}
+	return strings.TrimSpace(user.Username)
+}
+
+func resolveMemberUsername(raw string, members []*gl.ProjectMember) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(members) == 0 {
+		return trimmed
+	}
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Username), trimmed) {
+			return strings.TrimSpace(member.Username)
+		}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Name), trimmed) {
+			return strings.TrimSpace(member.Username)
+		}
+	}
+	return trimmed
 }

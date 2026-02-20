@@ -435,7 +435,7 @@ func TestDashboardSearchAutocompleteCompletesLastToken(t *testing.T) {
 func TestDashboardSearchMetadataFromProviderAddsSuggestions(t *testing.T) {
 	t.Parallel()
 
-	provider := &stubProvider{searchMetadata: SearchMetadata{Authors: []string{"remote-alice"}}}
+	provider := &stubProvider{searchMetadata: SearchMetadata{Authors: []SearchUser{{Name: "Remote Alice", Username: "4f8b8f90-aaaa-bbbb-cccc-1d2e3f4a5b6c"}}}}
 	m := NewDashboardModel(provider, DashboardContext{})
 	m.view = IssuesView
 	m.loading = false
@@ -451,7 +451,7 @@ func TestDashboardSearchMetadataFromProviderAddsSuggestions(t *testing.T) {
 
 	suggestions := model.searchInput.AvailableSuggestions()
 	joined := strings.Join(suggestions, " ")
-	if !strings.Contains(joined, "author:remote-alice") {
+	if !strings.Contains(joined, "author:\"Remote Alice\"") {
 		t.Fatalf("expected remote author suggestion, got %#v", suggestions)
 	}
 }

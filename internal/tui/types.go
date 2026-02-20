@@ -117,10 +117,15 @@ type DataProvider interface {
 }
 
 type SearchMetadata struct {
-	Authors    []string
-	Assignees  []string
+	Authors    []SearchUser
+	Assignees  []SearchUser
 	Labels     []string
 	Milestones []string
+}
+
+type SearchUser struct {
+	Name     string
+	Username string
 }
 
 type DashboardContext struct {

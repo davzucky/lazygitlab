@@ -213,8 +213,8 @@ func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (t
 
 func (p *MockProvider) LoadSearchMetadata(context.Context, tui.ViewMode) (tui.SearchMetadata, error) {
 	return tui.SearchMetadata{
-		Authors:    []string{"mock-author", "mock-reviewer"},
-		Assignees:  []string{"mock-assignee", "mock-author"},
+		Authors:    []tui.SearchUser{{Name: "Mock Author", Username: "mock-author"}, {Name: "Mock Reviewer", Username: "mock-reviewer"}},
+		Assignees:  []tui.SearchUser{{Name: "Mock Assignee", Username: "mock-assignee"}, {Name: "Mock Author", Username: "mock-author"}},
 		Labels:     []string{"mock", "ui", "backend"},
 		Milestones: []string{"Iteration 1", "Iteration 2"},
 	}, nil
