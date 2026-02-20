@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 type loadedMsg struct {
@@ -1639,14 +1640,13 @@ func fitLine(input string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(input)
-	if len(runes) <= width {
+	if xansi.StringWidth(input) <= width {
 		return input
 	}
 	if width <= 1 {
-		return string(runes[:width])
+		return xansi.Truncate(input, width, "")
 	}
-	return string(runes[:width-1]) + "…"
+	return xansi.Truncate(input, width, "…")
 }
 
 func listRowWidth(contentWidth int) int {

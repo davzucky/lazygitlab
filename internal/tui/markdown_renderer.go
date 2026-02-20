@@ -13,6 +13,8 @@ import (
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 )
 
@@ -69,7 +71,9 @@ func renderMarkdownStructured(input string, width int) []string {
 		return nil
 	}
 	source := []byte(input)
-	md := goldmark.New()
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
+	)
 	doc := md.Parser().Parse(text.NewReader(source))
 	lines := renderMarkdownBlocks(doc, source, max(8, width), "")
 	if len(lines) == 0 {
@@ -95,6 +99,9 @@ func renderMarkdownBlocks(parent ast.Node, source []byte, width int, prefix stri
 			out = append(out, "")
 		case *ast.List:
 			out = append(out, renderMarkdownList(typed, source, width, prefix)...)
+			out = append(out, "")
+		case *extast.Table:
+			out = append(out, renderMarkdownTable(typed, source, width, prefix)...)
 			out = append(out, "")
 		case *ast.FencedCodeBlock:
 			lang := strings.TrimSpace(string(typed.Language(source)))
@@ -226,6 +233,202 @@ func extractCodeBlockLines(lines *text.Segments, source []byte) []string {
 		out = append(out, strings.TrimRight(string(segment.Value(source)), "\r\n"))
 	}
 	return out
+}
+
+func renderMarkdownTable(table *extast.Table, source []byte, width int, prefix string) []string {
+	rows := make([][]string, 0, 4)
+	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
+		switch typed := child.(type) {
+		case *extast.TableHeader:
+			rows = append(rows, renderMarkdownTableRow(typed, source))
+		case *extast.TableRow:
+			rows = append(rows, renderMarkdownTableRow(typed, source))
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	columnCount := maxTableColumns(rows, len(table.Alignments))
+	if columnCount <= 0 {
+		return nil
+	}
+	normalized := normalizeTableRows(rows, columnCount)
+	columnWidths := fitTableColumnWidths(normalized, width-lipgloss.Width(prefix), columnCount)
+	if len(columnWidths) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(normalized)+1)
+	out = append(out, renderTableLine(normalized[0], columnWidths, table.Alignments, prefix))
+	out = append(out, renderTableSeparator(columnWidths, table.Alignments, prefix))
+	for _, row := range normalized[1:] {
+		out = append(out, renderTableLine(row, columnWidths, table.Alignments, prefix))
+	}
+	return out
+}
+
+func renderMarkdownTableRow(row ast.Node, source []byte) []string {
+	columns := make([]string, 0, 4)
+	for child := row.FirstChild(); child != nil; child = child.NextSibling() {
+		cell, ok := child.(*extast.TableCell)
+		if !ok {
+			continue
+		}
+		value := strings.ReplaceAll(extractNodeText(cell, source), "\n", " ")
+		columns = append(columns, strings.TrimSpace(value))
+	}
+	return columns
+}
+
+func maxTableColumns(rows [][]string, alignments int) int {
+	maxColumns := alignments
+	for _, row := range rows {
+		if len(row) > maxColumns {
+			maxColumns = len(row)
+		}
+	}
+	return maxColumns
+}
+
+func normalizeTableRows(rows [][]string, columns int) [][]string {
+	normalized := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		current := make([]string, columns)
+		for i := 0; i < columns; i++ {
+			if i < len(row) {
+				current[i] = row[i]
+				continue
+			}
+			current[i] = ""
+		}
+		normalized = append(normalized, current)
+	}
+	return normalized
+}
+
+func fitTableColumnWidths(rows [][]string, totalWidth int, columns int) []int {
+	if columns <= 0 || totalWidth <= 0 {
+		return nil
+	}
+	minimumWidth := 4*columns + 1
+	if totalWidth < minimumWidth {
+		return nil
+	}
+	available := totalWidth - (3*columns + 1)
+
+	widths := make([]int, columns)
+	for col := 0; col < columns; col++ {
+		maxWidth := 1
+		for _, row := range rows {
+			cellWidth := lipgloss.Width(row[col])
+			if cellWidth > maxWidth {
+				maxWidth = cellWidth
+			}
+		}
+		widths[col] = maxWidth
+	}
+
+	for sumInt(widths) > available {
+		index := widestShrinkableColumn(widths)
+		if index < 0 {
+			break
+		}
+		widths[index]--
+	}
+	return widths
+}
+
+func widestShrinkableColumn(widths []int) int {
+	index := -1
+	maxWidth := 1
+	for i, width := range widths {
+		if width <= 1 {
+			continue
+		}
+		if index == -1 || width > maxWidth {
+			index = i
+			maxWidth = width
+		}
+	}
+	return index
+}
+
+func sumInt(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
+	}
+	return total
+}
+
+func renderTableLine(row []string, widths []int, alignments []extast.Alignment, prefix string) string {
+	parts := make([]string, 0, len(widths))
+	for i := 0; i < len(widths); i++ {
+		alignment := extast.AlignNone
+		if i < len(alignments) {
+			alignment = alignments[i]
+		}
+		cell := ""
+		if i < len(row) {
+			cell = row[i]
+		}
+		parts = append(parts, alignTableCell(cell, widths[i], alignment))
+	}
+	return prefix + "| " + strings.Join(parts, " | ") + " |"
+}
+
+func renderTableSeparator(widths []int, alignments []extast.Alignment, prefix string) string {
+	parts := make([]string, 0, len(widths))
+	for i, width := range widths {
+		alignment := extast.AlignNone
+		if i < len(alignments) {
+			alignment = alignments[i]
+		}
+		parts = append(parts, tableSeparatorSegment(width, alignment))
+	}
+	return prefix + "| " + strings.Join(parts, " | ") + " |"
+}
+
+func alignTableCell(cell string, width int, alignment extast.Alignment) string {
+	trimmed := strings.TrimSpace(cell)
+	truncated := fitLine(trimmed, width)
+	padding := width - lipgloss.Width(truncated)
+	if padding <= 0 {
+		return truncated
+	}
+	leftPad := 0
+	rightPad := 0
+	switch alignment {
+	case extast.AlignRight:
+		leftPad = padding
+	case extast.AlignCenter:
+		leftPad = padding / 2
+		rightPad = padding - leftPad
+	default:
+		rightPad = padding
+	}
+	return strings.Repeat(" ", leftPad) + truncated + strings.Repeat(" ", rightPad)
+}
+
+func tableSeparatorSegment(width int, alignment extast.Alignment) string {
+	if width <= 1 {
+		if alignment == extast.AlignCenter || alignment == extast.AlignLeft || alignment == extast.AlignRight {
+			return ":"
+		}
+		return "-"
+	}
+	segment := []rune(strings.Repeat("-", width))
+	switch alignment {
+	case extast.AlignLeft:
+		segment[0] = ':'
+	case extast.AlignRight:
+		segment[len(segment)-1] = ':'
+	case extast.AlignCenter:
+		segment[0] = ':'
+		segment[len(segment)-1] = ':'
+	}
+	return string(segment)
 }
 
 func renderMarkdownList(list *ast.List, source []byte, width int, prefix string) []string {
