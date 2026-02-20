@@ -32,7 +32,7 @@ func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bo
 		}
 	case "/":
 		m = m.openSearch(IssuesView)
-		return m, nil, true
+		return m, m.loadSearchMetadataCmd(IssuesView), true
 	case "[":
 		m.issueState = prevIssueState(m.issueState)
 		m.selected = 0

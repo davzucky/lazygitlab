@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	gl "gitlab.com/gitlab-org/api/client-go"
@@ -20,6 +21,9 @@ type Client interface {
 	GetCurrentUser(ctx context.Context) (*gl.User, error)
 	GetProject(ctx context.Context, projectPath string) (*gl.Project, error)
 	ListProjects(ctx context.Context, search string) ([]*gl.Project, error)
+	ListProjectMembers(ctx context.Context, projectPath string, query string) ([]*gl.ProjectMember, error)
+	ListProjectLabels(ctx context.Context, projectPath string, search string) ([]*gl.Label, error)
+	ListProjectMilestones(ctx context.Context, projectPath string, search string) ([]*gl.Milestone, error)
 	ListIssues(ctx context.Context, projectPath string, opts IssueListOptions) ([]*gl.Issue, bool, error)
 	ListIssueNotes(ctx context.Context, projectPath string, issueIID int64) ([]*gl.Note, error)
 	ListIssueStateEvents(ctx context.Context, projectPath string, issueIID int64) ([]*gl.StateEvent, error)
@@ -128,6 +132,101 @@ func (c *client) ListProjects(ctx context.Context, search string) ([]*gl.Project
 		}
 
 		all = append(all, projects...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
+	return all, nil
+}
+
+func (c *client) ListProjectMembers(ctx context.Context, projectPath string, query string) ([]*gl.ProjectMember, error) {
+	all := make([]*gl.ProjectMember, 0, defaultPerPage)
+	page := int64(1)
+
+	for {
+		opts := &gl.ListProjectMembersOptions{
+			ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage},
+		}
+		if strings.TrimSpace(query) != "" {
+			opts.Query = gl.Ptr(query)
+		}
+
+		var members []*gl.ProjectMember
+		var resp *gl.Response
+		err := c.withRetry(ctx, "ListProjectMembers", func() (*gl.Response, error) {
+			var err error
+			members, resp, err = c.api.ProjectMembers.ListAllProjectMembers(projectPath, opts, gl.WithContext(ctx))
+			return resp, err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list project members for %q: %w", projectPath, err)
+		}
+
+		all = append(all, members...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
+	return all, nil
+}
+
+func (c *client) ListProjectLabels(ctx context.Context, projectPath string, search string) ([]*gl.Label, error) {
+	all := make([]*gl.Label, 0, defaultPerPage)
+	page := int64(1)
+
+	for {
+		opts := &gl.ListLabelsOptions{ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage}}
+		if strings.TrimSpace(search) != "" {
+			opts.Search = gl.Ptr(search)
+		}
+
+		var labels []*gl.Label
+		var resp *gl.Response
+		err := c.withRetry(ctx, "ListProjectLabels", func() (*gl.Response, error) {
+			var err error
+			labels, resp, err = c.api.Labels.ListLabels(projectPath, opts, gl.WithContext(ctx))
+			return resp, err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list labels for project %q: %w", projectPath, err)
+		}
+
+		all = append(all, labels...)
+		if resp == nil || resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
+	return all, nil
+}
+
+func (c *client) ListProjectMilestones(ctx context.Context, projectPath string, search string) ([]*gl.Milestone, error) {
+	all := make([]*gl.Milestone, 0, defaultPerPage)
+	page := int64(1)
+
+	for {
+		opts := &gl.ListMilestonesOptions{ListOptions: gl.ListOptions{Page: page, PerPage: defaultPerPage}}
+		if strings.TrimSpace(search) != "" {
+			opts.Search = gl.Ptr(search)
+		}
+
+		var milestones []*gl.Milestone
+		var resp *gl.Response
+		err := c.withRetry(ctx, "ListProjectMilestones", func() (*gl.Response, error) {
+			var err error
+			milestones, resp, err = c.api.Milestones.ListMilestones(projectPath, opts, gl.WithContext(ctx))
+			return resp, err
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list milestones for project %q: %w", projectPath, err)
+		}
+
+		all = append(all, milestones...)
 		if resp == nil || resp.NextPage == 0 {
 			break
 		}

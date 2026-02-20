@@ -10,8 +10,11 @@ import (
 )
 
 type captureClient struct {
-	issueOpts gitlab.IssueListOptions
-	mrOpts    gitlab.MergeRequestListOptions
+	issueOpts  gitlab.IssueListOptions
+	mrOpts     gitlab.MergeRequestListOptions
+	members    []*gl.ProjectMember
+	labels     []*gl.Label
+	milestones []*gl.Milestone
 }
 
 func (c *captureClient) GetCurrentUser(context.Context) (*gl.User, error) {
@@ -24,6 +27,18 @@ func (c *captureClient) GetProject(context.Context, string) (*gl.Project, error)
 
 func (c *captureClient) ListProjects(context.Context, string) ([]*gl.Project, error) {
 	return nil, nil
+}
+
+func (c *captureClient) ListProjectMembers(context.Context, string, string) ([]*gl.ProjectMember, error) {
+	return c.members, nil
+}
+
+func (c *captureClient) ListProjectLabels(context.Context, string, string) ([]*gl.Label, error) {
+	return c.labels, nil
+}
+
+func (c *captureClient) ListProjectMilestones(context.Context, string, string) ([]*gl.Milestone, error) {
+	return c.milestones, nil
 }
 
 func (c *captureClient) ListIssues(_ context.Context, _ string, opts gitlab.IssueListOptions) ([]*gl.Issue, bool, error) {
@@ -88,5 +103,34 @@ func TestProviderParsesMergeRequestMetadataSearch(t *testing.T) {
 	}
 	if len(client.mrOpts.Labels) != 1 || client.mrOpts.Labels[0] != "frontend" {
 		t.Fatalf("Labels = %#v want %#v", client.mrOpts.Labels, []string{"frontend"})
+	}
+}
+
+func TestProviderLoadsSearchMetadataFromGitLab(t *testing.T) {
+	t.Parallel()
+
+	client := &captureClient{
+		members:    []*gl.ProjectMember{{Username: "alice"}, {Username: "bob"}, {Username: "alice"}},
+		labels:     []*gl.Label{{Name: "backend"}, {Name: "ui"}},
+		milestones: []*gl.Milestone{{Title: "Sprint 1"}},
+	}
+	provider := NewProvider(client, "group/project")
+
+	metadata, err := provider.LoadSearchMetadata(context.Background(), tui.IssuesView)
+	if err != nil {
+		t.Fatalf("LoadSearchMetadata() error = %v", err)
+	}
+
+	if len(metadata.Authors) != 2 || metadata.Authors[0] != "alice" || metadata.Authors[1] != "bob" {
+		t.Fatalf("Authors = %#v want %#v", metadata.Authors, []string{"alice", "bob"})
+	}
+	if len(metadata.Assignees) != 2 || metadata.Assignees[0] != "alice" || metadata.Assignees[1] != "bob" {
+		t.Fatalf("Assignees = %#v want %#v", metadata.Assignees, []string{"alice", "bob"})
+	}
+	if len(metadata.Labels) != 2 || metadata.Labels[0] != "backend" || metadata.Labels[1] != "ui" {
+		t.Fatalf("Labels = %#v want %#v", metadata.Labels, []string{"backend", "ui"})
+	}
+	if len(metadata.Milestones) != 1 || metadata.Milestones[0] != "Sprint 1" {
+		t.Fatalf("Milestones = %#v want %#v", metadata.Milestones, []string{"Sprint 1"})
 	}
 }

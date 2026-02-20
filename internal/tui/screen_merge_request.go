@@ -25,7 +25,7 @@ func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.
 		}
 	case "/":
 		m = m.openSearch(MergeRequestsView)
-		return m, nil, true
+		return m, m.loadSearchMetadataCmd(MergeRequestsView), true
 	case "[":
 		m.mergeRequestState = prevMergeRequestState(m.mergeRequestState)
 		m.selected = 0

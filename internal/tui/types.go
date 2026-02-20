@@ -113,6 +113,14 @@ type DataProvider interface {
 	LoadIssues(ctx context.Context, query IssueQuery) (IssueResult, error)
 	LoadMergeRequests(ctx context.Context, query MergeRequestQuery) (MergeRequestResult, error)
 	LoadIssueDetailData(ctx context.Context, issueIID int64) (IssueDetailData, error)
+	LoadSearchMetadata(ctx context.Context, view ViewMode) (SearchMetadata, error)
+}
+
+type SearchMetadata struct {
+	Authors    []string
+	Assignees  []string
+	Labels     []string
+	Milestones []string
 }
 
 type DashboardContext struct {

@@ -202,6 +202,68 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 	return tui.MergeRequestResult{Items: items, HasNextPage: hasNextPage}, nil
 }
 
+func (p *Provider) LoadSearchMetadata(ctx context.Context, _ tui.ViewMode) (tui.SearchMetadata, error) {
+	if p.projectPath == "" {
+		return tui.SearchMetadata{}, fmt.Errorf("no project context selected")
+	}
+
+	members, err := p.client.ListProjectMembers(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, err
+	}
+	labels, err := p.client.ListProjectLabels(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, err
+	}
+	milestones, err := p.client.ListProjectMilestones(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, err
+	}
+
+	authors := make([]string, 0, len(members))
+	assignees := make([]string, 0, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		username := strings.TrimSpace(member.Username)
+		if username == "" {
+			continue
+		}
+		authors = append(authors, username)
+		assignees = append(assignees, username)
+	}
+
+	labelNames := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if label == nil {
+			continue
+		}
+		name := strings.TrimSpace(label.Name)
+		if name != "" {
+			labelNames = append(labelNames, name)
+		}
+	}
+
+	milestoneNames := make([]string, 0, len(milestones))
+	for _, milestone := range milestones {
+		if milestone == nil {
+			continue
+		}
+		title := strings.TrimSpace(milestone.Title)
+		if title != "" {
+			milestoneNames = append(milestoneNames, title)
+		}
+	}
+
+	return tui.SearchMetadata{
+		Authors:    uniqueSorted(authors),
+		Assignees:  uniqueSorted(assignees),
+		Labels:     uniqueSorted(labelNames),
+		Milestones: uniqueSorted(milestoneNames),
+	}, nil
+}
+
 func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui.IssueDetailData, error) {
 	if p.projectPath == "" {
 		return tui.IssueDetailData{}, fmt.Errorf("no project context selected")
@@ -288,4 +350,28 @@ func formatIssueTime(value *time.Time) string {
 		return "-"
 	}
 	return value.Local().Format("2006-01-02 15:04 MST")
+}
+
+func uniqueSorted(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		unique = append(unique, trimmed)
+	}
+	sort.Strings(unique)
+	if len(unique) == 0 {
+		return nil
+	}
+	return unique
 }

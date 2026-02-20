@@ -39,6 +39,13 @@ type markdownRenderedMsg struct {
 	lines    []string
 }
 
+type searchMetadataLoadedMsg struct {
+	view      ViewMode
+	metadata  SearchMetadata
+	err       error
+	requestID int
+}
+
 type issueDetailTab int
 
 type focusTarget string
@@ -84,6 +91,10 @@ type DashboardModel struct {
 	issueHasNext             bool
 	mergeRequestPage         int
 	mergeRequestHasNext      bool
+	searchMetadata           SearchMetadata
+	searchMetadataLoading    bool
+	searchRequestSeq         int
+	searchRequestID          int
 	issueDetail              bool
 	mergeRequestDetail       bool
 	detailScroll             int
@@ -130,6 +141,8 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		markdownBody:      make(map[string][]string),
 		requestSeq:        1,
 		requestID:         1,
+		searchRequestSeq:  1,
+		searchRequestID:   1,
 		issuePage:         1,
 		mergeRequestPage:  1,
 		focus:             focusMain,
@@ -240,6 +253,18 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.clearDetailCache()
 		}
+		return m, nil
+
+	case searchMetadataLoadedMsg:
+		if msg.requestID != m.searchRequestID || msg.view != m.searchView {
+			return m, nil
+		}
+		m.searchMetadataLoading = false
+		if msg.err != nil {
+			return m, nil
+		}
+		m.searchMetadata = msg.metadata
+		m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
 		return m, nil
 
 	case tea.KeyMsg:
@@ -1597,6 +1622,10 @@ func (m DashboardModel) renderMergeRequestSearch(width int) string {
 func (m DashboardModel) openSearch(view ViewMode) DashboardModel {
 	m.searchMode = true
 	m.searchView = view
+	m.searchMetadata = SearchMetadata{}
+	m.searchMetadataLoading = true
+	m.searchRequestSeq++
+	m.searchRequestID = m.searchRequestSeq
 	m.searchInput.Focus()
 	if view == MergeRequestsView {
 		m.searchInput.SetValue(m.mergeRequestSearch)
@@ -1606,6 +1635,17 @@ func (m DashboardModel) openSearch(view ViewMode) DashboardModel {
 	m.searchInput.SetSuggestions(m.searchSuggestions(view))
 	m.searchInput.CursorEnd()
 	return m
+}
+
+func (m DashboardModel) loadSearchMetadataCmd(view ViewMode) tea.Cmd {
+	provider := m.provider
+	requestID := m.searchRequestID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		metadata, err := provider.LoadSearchMetadata(ctx, view)
+		return searchMetadataLoadedMsg{view: view, metadata: metadata, err: err, requestID: requestID}
+	}
 }
 
 func (m DashboardModel) searchSuggestions(view ViewMode) []string {
@@ -1657,6 +1697,27 @@ func (m DashboardModel) searchSuggestions(view ViewMode) []string {
 			}
 		}
 		if suggestion := qualifierSuggestion("milestone", item.MergeRequest.Milestone); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+
+	for _, author := range m.searchMetadata.Authors {
+		if trimmed := strings.TrimSpace(author); trimmed != "" {
+			unique["author:"+trimmed] = struct{}{}
+		}
+	}
+	for _, assignee := range m.searchMetadata.Assignees {
+		if trimmed := strings.TrimSpace(assignee); trimmed != "" {
+			unique["assignee:"+trimmed] = struct{}{}
+		}
+	}
+	for _, label := range m.searchMetadata.Labels {
+		if suggestion := qualifierSuggestion("label", label); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+	for _, milestone := range m.searchMetadata.Milestones {
+		if suggestion := qualifierSuggestion("milestone", milestone); suggestion != "" {
 			unique[suggestion] = struct{}{}
 		}
 	}

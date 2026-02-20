@@ -211,6 +211,15 @@ func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (t
 	}, nil
 }
 
+func (p *MockProvider) LoadSearchMetadata(context.Context, tui.ViewMode) (tui.SearchMetadata, error) {
+	return tui.SearchMetadata{
+		Authors:    []string{"mock-author", "mock-reviewer"},
+		Assignees:  []string{"mock-assignee", "mock-author"},
+		Labels:     []string{"mock", "ui", "backend"},
+		Milestones: []string{"Iteration 1", "Iteration 2"},
+	}, nil
+}
+
 func containsAll(values []string, required []string) bool {
 	set := make(map[string]struct{}, len(values))
 	for _, value := range values {
