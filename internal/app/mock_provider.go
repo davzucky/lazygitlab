@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/davzucky/lazygitlab/internal/gitlab"
 	"github.com/davzucky/lazygitlab/internal/tui"
 )
 
@@ -34,7 +35,8 @@ func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.
 	}
 
 	filtered := make([]tui.ListItem, 0, 120)
-	needle := strings.ToLower(strings.TrimSpace(query.Search))
+	parsed := gitlab.ParseSearchQuery(query.Search)
+	needle := strings.ToLower(strings.TrimSpace(parsed.Text))
 
 	for i := 120; i >= 1; i-- {
 		issueState := "opened"
@@ -49,7 +51,21 @@ func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.
 		}
 
 		title := fmt.Sprintf("Mock issue %03d with long title to validate clipping and stable panel width behavior", i)
+		authorLogin := "mock-author"
+		assigneeLogin := "mock-assignee"
 		if needle != "" && !strings.Contains(strings.ToLower(title), needle) {
+			continue
+		}
+		if parsed.Author != "" && parsed.Author != authorLogin {
+			continue
+		}
+		if parsed.Assignee != "" && parsed.Assignee != assigneeLogin {
+			continue
+		}
+		if parsed.Milestone != "" && parsed.Milestone != "Iteration 1" {
+			continue
+		}
+		if len(parsed.Labels) > 0 && !containsAll([]string{"mock", "ui"}, parsed.Labels) {
 			continue
 		}
 
@@ -59,15 +75,18 @@ func (p *MockProvider) LoadIssues(_ context.Context, query tui.IssueQuery) (tui.
 			Subtitle: fmt.Sprintf("#%d • %s", 3000+i, issueState),
 			URL:      fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
 			Issue: &tui.IssueDetails{
-				IID:         int64(3000 + i),
-				State:       issueState,
-				Author:      "Mock Author",
-				Assignees:   []string{"Mock Assignee"},
-				Labels:      []string{"mock", "ui"},
-				CreatedAt:   "2026-01-01 10:00 UTC",
-				UpdatedAt:   "2026-01-02 11:00 UTC",
-				URL:         fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
-				Description: "Mock issue description for validating wrapped and scrollable issue detail rendering in the dashboard.",
+				IID:            int64(3000 + i),
+				State:          issueState,
+				Author:         "Mock Author",
+				AuthorLogin:    authorLogin,
+				Assignees:      []string{"Mock Assignee"},
+				AssigneeLogins: []string{assigneeLogin},
+				Labels:         []string{"mock", "ui"},
+				Milestone:      "Iteration 1",
+				CreatedAt:      "2026-01-01 10:00 UTC",
+				UpdatedAt:      "2026-01-02 11:00 UTC",
+				URL:            fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/issues/%d", 3000+i),
+				Description:    "Mock issue description for validating wrapped and scrollable issue detail rendering in the dashboard.",
 			},
 		})
 	}
@@ -95,6 +114,8 @@ func (p *MockProvider) LoadMergeRequests(_ context.Context, query tui.MergeReque
 	if query.PerPage <= 0 {
 		query.PerPage = 25
 	}
+	parsed := gitlab.ParseSearchQuery(query.Search)
+	needle := strings.ToLower(strings.TrimSpace(parsed.Text))
 
 	items := make([]tui.ListItem, 0, 20)
 	for i := 20; i >= 1; i-- {
@@ -115,23 +136,47 @@ func (p *MockProvider) LoadMergeRequests(_ context.Context, query tui.MergeReque
 			continue
 		}
 
+		authorLogin := "mock-author"
+		assigneeLogin := "mock-assignee"
+		title := fmt.Sprintf("Mock merge request %02d with extended title for rendering checks", i)
+		if needle != "" && !strings.Contains(strings.ToLower(title), needle) {
+			continue
+		}
+		if parsed.Author != "" && parsed.Author != authorLogin {
+			continue
+		}
+		if parsed.Assignee != "" && parsed.Assignee != assigneeLogin {
+			continue
+		}
+		if parsed.Milestone != "" && parsed.Milestone != "Iteration 1" {
+			continue
+		}
+		if len(parsed.Labels) > 0 && !containsAll([]string{"mock", "ui"}, parsed.Labels) {
+			continue
+		}
+
 		iid := int64(6000 + i)
 		url := fmt.Sprintf("https://mock.gitlab.local/mock/group/project/-/merge_requests/%d", iid)
 		items = append(items, tui.ListItem{
 			ID:       int64(5000 + i),
-			Title:    fmt.Sprintf("Mock merge request %02d with extended title for rendering checks", i),
+			Title:    title,
 			Subtitle: fmt.Sprintf("!%d • %s", iid, mrState),
 			URL:      url,
 			MergeRequest: &tui.MergeRequestDetails{
-				IID:          iid,
-				State:        mrState,
-				Author:       "Mock Author",
-				SourceBranch: fmt.Sprintf("feature/mock-%02d", i),
-				TargetBranch: "main",
-				CreatedAt:    "2026-01-01 10:00 UTC",
-				UpdatedAt:    "2026-01-02 11:00 UTC",
-				URL:          url,
-				Description:  "Mock merge request description for validating detail rendering and scroll behavior.",
+				IID:            iid,
+				State:          mrState,
+				Author:         "Mock Author",
+				AuthorLogin:    authorLogin,
+				Assignees:      []string{"Mock Assignee"},
+				AssigneeLogins: []string{assigneeLogin},
+				Labels:         []string{"mock", "ui"},
+				Milestone:      "Iteration 1",
+				SourceBranch:   fmt.Sprintf("feature/mock-%02d", i),
+				TargetBranch:   "main",
+				CreatedAt:      "2026-01-01 10:00 UTC",
+				UpdatedAt:      "2026-01-02 11:00 UTC",
+				URL:            url,
+				Description:    "Mock merge request description for validating detail rendering and scroll behavior.",
 			},
 		})
 	}
@@ -164,4 +209,17 @@ func (p *MockProvider) LoadIssueDetailData(_ context.Context, issueIID int64) (t
 			{Author: "Mock Author", CreatedAt: "2026-01-01 10:05 UTC", Body: "Initial report with **markdown** content and a code block:\n\n```go\nfmt.Println(\"hello\")\n```"},
 		},
 	}, nil
+}
+
+func containsAll(values []string, required []string) bool {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	for _, req := range required {
+		if _, ok := set[strings.ToLower(strings.TrimSpace(req))]; !ok {
+			return false
+		}
+	}
+	return true
 }

@@ -4,6 +4,8 @@ import tea "github.com/charmbracelet/bubbletea"
 
 var mergeRequestKeyHints = []string{
 	"enter: open merge request details",
+	"/: search",
+	"tab: autocomplete",
 	"[: prev state",
 	"]: next state",
 	"o/m/c/a: open/merged/closed/all",
@@ -21,6 +23,9 @@ func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.
 			m.mergeRequestDetailScroll = 0
 			return m, nil, true
 		}
+	case "/":
+		m = m.openSearch(MergeRequestsView)
+		return m, nil, true
 	case "[":
 		m.mergeRequestState = prevMergeRequestState(m.mergeRequestState)
 		m.selected = 0
@@ -59,6 +64,7 @@ func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.
 func (m DashboardModel) renderMergeRequestBody(width int) []string {
 	lines := []string{
 		" " + m.renderMergeRequestTabs(max(20, width-8)),
+		" " + m.renderMergeRequestSearch(max(20, width-8)),
 		m.styles.dim.Render(" sort: updated newest first"),
 		"",
 	}

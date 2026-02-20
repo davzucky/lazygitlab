@@ -27,16 +27,25 @@ type Client interface {
 }
 
 type IssueListOptions struct {
-	State   string
-	Search  string
-	Page    int64
-	PerPage int
+	State            string
+	Search           string
+	AuthorUsername   string
+	AssigneeUsername string
+	Labels           []string
+	Milestone        string
+	Page             int64
+	PerPage          int
 }
 
 type MergeRequestListOptions struct {
-	State   string
-	Page    int64
-	PerPage int
+	State            string
+	Search           string
+	AuthorUsername   string
+	AssigneeUsername string
+	Labels           []string
+	Milestone        string
+	Page             int64
+	PerPage          int
 }
 
 type client struct {
@@ -147,6 +156,16 @@ func (c *client) ListIssues(ctx context.Context, projectPath string, opts IssueL
 	if opts.Search != "" {
 		apiOpts.Search = gl.Ptr(opts.Search)
 	}
+	if opts.AuthorUsername != "" {
+		apiOpts.AuthorUsername = gl.Ptr(opts.AuthorUsername)
+	}
+	if len(opts.Labels) > 0 {
+		labels := gl.LabelOptions(opts.Labels)
+		apiOpts.Labels = &labels
+	}
+	if opts.Milestone != "" {
+		apiOpts.Milestone = gl.Ptr(opts.Milestone)
+	}
 
 	var issues []*gl.Issue
 	var resp *gl.Response
@@ -238,6 +257,19 @@ func (c *client) ListMergeRequests(ctx context.Context, projectPath string, opts
 	}
 	if opts.State != "" {
 		apiOpts.State = gl.Ptr(opts.State)
+	}
+	if opts.Search != "" {
+		apiOpts.Search = gl.Ptr(opts.Search)
+	}
+	if opts.AuthorUsername != "" {
+		apiOpts.AuthorUsername = gl.Ptr(opts.AuthorUsername)
+	}
+	if len(opts.Labels) > 0 {
+		labels := gl.LabelOptions(opts.Labels)
+		apiOpts.Labels = &labels
+	}
+	if opts.Milestone != "" {
+		apiOpts.Milestone = gl.Ptr(opts.Milestone)
 	}
 
 	var mrs []*gl.BasicMergeRequest

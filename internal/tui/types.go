@@ -20,15 +20,18 @@ type ListItem struct {
 }
 
 type IssueDetails struct {
-	IID         int64
-	State       string
-	Author      string
-	Assignees   []string
-	Labels      []string
-	CreatedAt   string
-	UpdatedAt   string
-	URL         string
-	Description string
+	IID            int64
+	State          string
+	Author         string
+	AuthorLogin    string
+	Assignees      []string
+	AssigneeLogins []string
+	Labels         []string
+	Milestone      string
+	CreatedAt      string
+	UpdatedAt      string
+	URL            string
+	Description    string
 }
 
 type IssueComment struct {
@@ -79,6 +82,7 @@ const (
 
 type MergeRequestQuery struct {
 	State   MergeRequestState
+	Search  string
 	Page    int
 	PerPage int
 }
@@ -89,15 +93,20 @@ type MergeRequestResult struct {
 }
 
 type MergeRequestDetails struct {
-	IID          int64
-	State        string
-	Author       string
-	SourceBranch string
-	TargetBranch string
-	CreatedAt    string
-	UpdatedAt    string
-	URL          string
-	Description  string
+	IID            int64
+	State          string
+	Author         string
+	AuthorLogin    string
+	Assignees      []string
+	AssigneeLogins []string
+	Labels         []string
+	Milestone      string
+	SourceBranch   string
+	TargetBranch   string
+	CreatedAt      string
+	UpdatedAt      string
+	URL            string
+	Description    string
 }
 
 type DataProvider interface {
