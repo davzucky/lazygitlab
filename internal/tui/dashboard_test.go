@@ -389,6 +389,44 @@ func TestDashboardSearchIncludesMetadataSuggestions(t *testing.T) {
 	}
 }
 
+func TestDashboardSearchAutocompleteCompletesCurrentToken(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("aut")})
+	model = updated.(DashboardModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.searchInput.Value() != "author:" {
+		t.Fatalf("autocomplete value = %q want %q", model.searchInput.Value(), "author:")
+	}
+}
+
+func TestDashboardSearchAutocompleteCompletesLastToken(t *testing.T) {
+	t.Parallel()
+
+	m := NewDashboardModel(&stubProvider{}, DashboardContext{})
+	m.view = IssuesView
+	m.loading = false
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	model := updated.(DashboardModel)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bug aut")})
+	model = updated.(DashboardModel)
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(DashboardModel)
+	if model.searchInput.Value() != "bug author:" {
+		t.Fatalf("autocomplete value = %q want %q", model.searchInput.Value(), "bug author:")
+	}
+}
+
 func TestDashboardMergeRequestStateTabReloads(t *testing.T) {
 	t.Parallel()
 

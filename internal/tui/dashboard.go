@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -272,8 +273,19 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.searchMode {
 			m.focus = focusSearch
+			switch msg.String() {
+			case "tab":
+				if updated, ok := m.applySearchCompletion(true); ok {
+					return updated, nil
+				}
+			case "shift+tab":
+				if updated, ok := m.applySearchCompletion(false); ok {
+					return updated, nil
+				}
+			}
 			var cmd tea.Cmd
 			m.searchInput, cmd = m.searchInput.Update(msg)
+			m.resetSearchCompletionState()
 			switch msg.String() {
 			case "enter":
 				m.searchMode = false
@@ -1670,6 +1682,107 @@ func qualifierSuggestion(key string, value string) string {
 		return fmt.Sprintf("%s:\"%s\"", key, replaced)
 	}
 	return key + ":" + trimmed
+}
+
+func (m *DashboardModel) resetSearchCompletionState() {
+	m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
+}
+
+func (m DashboardModel) applySearchCompletion(next bool) (DashboardModel, bool) {
+	value := m.searchInput.Value()
+	start, end := completionTokenSpan(value, m.searchInput.Position())
+	token := sliceRunes(value, start, end)
+	all := m.searchSuggestions(m.searchView)
+	matches := make([]string, 0, len(all))
+	needle := strings.ToLower(token)
+	for _, suggestion := range all {
+		if strings.HasPrefix(strings.ToLower(suggestion), needle) {
+			matches = append(matches, suggestion)
+		}
+	}
+	if len(matches) == 0 {
+		return m, false
+	}
+
+	index := 0
+	if current, exists := currentValueIndex(matches, token); exists {
+		if next {
+			index = (current + 1) % len(matches)
+		} else {
+			index = current - 1
+			if index < 0 {
+				index = len(matches) - 1
+			}
+		}
+	}
+
+	replacement := matches[index]
+	updatedValue := replaceRuneSpan(value, start, end, replacement)
+	m.searchInput.SetValue(updatedValue)
+	m.searchInput.SetCursor(start + len([]rune(replacement)))
+	m.searchInput.SetSuggestions(matches)
+	return m, true
+}
+
+func completionTokenSpan(value string, cursor int) (int, int) {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+
+	start := cursor
+	for start > 0 && !unicode.IsSpace(runes[start-1]) {
+		start--
+	}
+	end := cursor
+	for end < len(runes) && !unicode.IsSpace(runes[end]) {
+		end++
+	}
+	return start, end
+}
+
+func sliceRunes(value string, start int, end int) string {
+	runes := []rune(value)
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	return string(runes[start:end])
+}
+
+func replaceRuneSpan(value string, start int, end int, replacement string) string {
+	runes := []rune(value)
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	out := make([]rune, 0, len(runes)-max(0, end-start)+len([]rune(replacement)))
+	out = append(out, runes[:start]...)
+	out = append(out, []rune(replacement)...)
+	out = append(out, runes[end:]...)
+	return string(out)
+}
+
+func currentValueIndex(values []string, current string) (int, bool) {
+	for i, value := range values {
+		if value == current {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func issueStateLabel(state IssueState) string {
