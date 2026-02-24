@@ -603,21 +603,140 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
 	bodyRows := max(1, height-len(lines)-2)
-	if m.loading {
-		lines = append(lines, "  "+m.spinner.View()+" Loading...")
-	} else if len(m.items) == 0 {
-		lines = append(lines, "  No items")
-	} else {
-		contentWidth := max(10, width-8)
-		lines = append(lines, m.renderListLines(contentWidth, bodyRows)...)
-		if m.loadingMore {
-			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
-		}
-	}
+	contentWidth := max(10, width-8)
+	lines = append(lines, m.renderMainSplitLines(contentWidth, bodyRows)...)
 
 	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
 	lines = fitHeight(lines, innerHeight)
 	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
+}
+
+func (m DashboardModel) renderMainSplitLines(contentWidth int, bodyRows int) []string {
+	if bodyRows <= 0 {
+		return nil
+	}
+
+	listWidth := max(32, min(contentWidth-26, int(float64(contentWidth)*0.66)))
+	previewWidth := max(24, contentWidth-listWidth-3)
+	header := m.styles.dim.Render(fitLine(" Results", listWidth)) + " | " + m.styles.dim.Render(fitLine(" Preview", previewWidth))
+	if bodyRows == 1 {
+		return []string{header}
+	}
+
+	rows := bodyRows - 1
+	listLines := m.renderListPaneLines(listWidth, rows)
+	previewLines := m.renderPreviewLines(previewWidth, rows)
+	listLines = fitHeight(listLines, rows)
+	previewLines = fitHeight(previewLines, rows)
+
+	out := make([]string, 0, bodyRows)
+	out = append(out, header)
+	for i := 0; i < rows; i++ {
+		left := padToWidth(listLines[i], listWidth)
+		right := fitLine(previewLines[i], previewWidth)
+		out = append(out, left+" | "+right)
+	}
+	return out
+}
+
+func (m DashboardModel) renderListPaneLines(width int, rows int) []string {
+	if rows <= 0 {
+		return nil
+	}
+	if m.loading {
+		return fitHeight([]string{" " + m.spinner.View() + " Loading..."}, rows)
+	}
+	if len(m.items) == 0 {
+		return fitHeight([]string{" No items"}, rows)
+	}
+
+	lines := m.renderListLines(width, rows)
+	if m.loadingMore {
+		lines = append(lines, m.styles.dim.Render(" "+m.spinner.View()+" Loading next page..."))
+	}
+	return lines
+}
+
+func (m DashboardModel) renderPreviewLines(width int, rows int) []string {
+	if rows <= 0 {
+		return nil
+	}
+	if len(m.items) == 0 || m.selected < 0 || m.selected >= len(m.items) {
+		return []string{m.styles.dim.Render("Select an item to preview")}
+	}
+
+	item := m.items[m.selected]
+	if m.view == MergeRequestsView {
+		return m.mergeRequestPreviewLines(item, width)
+	}
+	return m.issuePreviewLines(item, width)
+}
+
+func (m DashboardModel) issuePreviewLines(item ListItem, width int) []string {
+	if item.Issue == nil {
+		return wrapLines([]string{
+			fallbackValue(item.Title, "-"),
+			"",
+			"No issue metadata available.",
+		}, width)
+	}
+	details := item.Issue
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("#%d", details.IID)
+	}
+	meta := []string{
+		fallbackValue(item.Title, "-"),
+		"",
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
+		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Assignees: %s", joinOrFallback(details.Assignees, "Unassigned")),
+		fmt.Sprintf("Labels: %s", joinOrFallback(details.Labels, "None")),
+		fmt.Sprintf("Milestone: %s", fallbackValue(details.Milestone, "None")),
+		fmt.Sprintf("Updated: %s", fallbackValue(details.UpdatedAt, "-")),
+		"",
+		"Description:",
+	}
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		description = "No description provided."
+	}
+	return append(wrapLines(meta, width), renderMarkdownParagraphs(description, width)...)
+}
+
+func (m DashboardModel) mergeRequestPreviewLines(item ListItem, width int) []string {
+	if item.MergeRequest == nil {
+		return wrapLines([]string{
+			fallbackValue(item.Title, "-"),
+			"",
+			"No merge request metadata available.",
+		}, width)
+	}
+	details := item.MergeRequest
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("!%d", details.IID)
+	}
+	meta := []string{
+		fallbackValue(item.Title, "-"),
+		"",
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
+		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Assignees: %s", joinOrFallback(details.Assignees, "Unassigned")),
+		fmt.Sprintf("Labels: %s", joinOrFallback(details.Labels, "None")),
+		fmt.Sprintf("Milestone: %s", fallbackValue(details.Milestone, "None")),
+		fmt.Sprintf("Branches: %s -> %s", fallbackValue(details.SourceBranch, "-"), fallbackValue(details.TargetBranch, "-")),
+		fmt.Sprintf("Updated: %s", fallbackValue(details.UpdatedAt, "-")),
+		"",
+		"Description:",
+	}
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		description = "No description provided."
+	}
+	return append(wrapLines(meta, width), renderMarkdownParagraphs(description, width)...)
 }
 
 func (m DashboardModel) renderListLines(contentWidth int, bodyRows int) []string {
@@ -1478,8 +1597,9 @@ func renderSizedBox(style lipgloss.Style, width int, height int, content string)
 
 func issueListMeta(item ListItem) string {
 	const (
-		authorColWidth   = 22
-		assigneeColWidth = 22
+		authorColWidth   = 18
+		assigneeColWidth = 18
+		labelColWidth    = 16
 	)
 
 	if item.Issue == nil {
@@ -1487,19 +1607,22 @@ func issueListMeta(item ListItem) string {
 			return item.Subtitle
 		}
 		return fmt.Sprintf(
-			"by %s | to %s | created %s",
+			"by %s | to %s | labels %s | created %s",
 			padOrTrimRight("-", authorColWidth),
 			padOrTrimRight("Unassigned", assigneeColWidth),
+			padOrTrimRight("None", labelColWidth),
 			"-",
 		)
 	}
 	author := padOrTrimRight(fallbackValue(item.Issue.Author, "-"), authorColWidth)
 	assignee := padOrTrimRight(joinOrFallback(item.Issue.Assignees, "Unassigned"), assigneeColWidth)
+	labels := padOrTrimRight(joinOrFallback(item.Issue.Labels, "None"), labelColWidth)
 	created := fallbackValue(item.Issue.CreatedAt, "-")
 	return fmt.Sprintf(
-		"by %s | to %s | created %s",
+		"by %s | to %s | labels %s | created %s",
 		author,
 		assignee,
+		labels,
 		created,
 	)
 }

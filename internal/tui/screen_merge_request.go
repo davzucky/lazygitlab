@@ -1,5 +1,7 @@
 package tui
 
+import "fmt"
+
 import tea "github.com/charmbracelet/bubbletea"
 
 var mergeRequestKeyHints = []string{
@@ -62,14 +64,19 @@ func (m DashboardModel) handleMergeRequestScreenKey(key string) (tea.Model, tea.
 }
 
 func (m DashboardModel) renderMergeRequestBody(width int) []string {
+	resultCount := fmt.Sprintf("results: %d", len(m.items))
+	if m.loading {
+		resultCount = "results: loading"
+	}
+	if m.loadingMore {
+		resultCount += " (+more)"
+	}
 	lines := []string{
 		" " + m.renderMergeRequestTabs(max(20, width-8)),
 		" " + m.renderMergeRequestSearch(max(20, width-8)),
-		m.styles.dim.Render(" sort: updated newest first"),
+		m.styles.dim.Render(" sort: updated newest first | " + resultCount),
+		m.styles.dim.Render(" keys: / search, tab complete, [ ] state, enter details, ? help"),
 		"",
-	}
-	for _, hint := range mergeRequestKeyHints {
-		lines = append(lines, m.styles.dim.Render(" "+hint))
 	}
 	return lines
 }

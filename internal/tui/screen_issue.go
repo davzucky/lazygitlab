@@ -1,5 +1,7 @@
 package tui
 
+import "fmt"
+
 import tea "github.com/charmbracelet/bubbletea"
 
 var issueKeyHints = []string{
@@ -64,14 +66,19 @@ func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bo
 }
 
 func (m DashboardModel) renderIssueBody(width int) []string {
+	resultCount := fmt.Sprintf("results: %d", len(m.items))
+	if m.loading {
+		resultCount = "results: loading"
+	}
+	if m.loadingMore {
+		resultCount += " (+more)"
+	}
 	lines := []string{
 		" " + m.renderIssueTabs(max(20, width-8)),
 		" " + m.renderIssueSearch(max(20, width-8)),
-		m.styles.dim.Render(" sort: updated newest first"),
+		m.styles.dim.Render(" sort: updated newest first | " + resultCount),
+		m.styles.dim.Render(" keys: / search, tab complete, [ ] state, enter details, ? help"),
 		"",
-	}
-	for _, hint := range issueKeyHints {
-		lines = append(lines, m.styles.dim.Render(" "+hint))
 	}
 	return lines
 }
