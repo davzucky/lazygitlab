@@ -261,9 +261,12 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.searchMetadataLoading = false
 		if msg.err != nil {
+			m.errorMessage = fmt.Sprintf("failed to load search metadata: %v", msg.err)
+			m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
 			return m, nil
 		}
 		m.searchMetadata = msg.metadata
+		m.errorMessage = ""
 		m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
 		return m, nil
 
@@ -1758,7 +1761,7 @@ func (m DashboardModel) renderIssueTabs(width int) string {
 }
 
 func (m DashboardModel) renderIssueSearch(width int) string {
-	if m.searchMode {
+	if m.searchMode && m.searchView == IssuesView {
 		return fitLine(m.searchInput.View(), width)
 	}
 	if strings.TrimSpace(m.issueSearch) == "" {
@@ -1768,7 +1771,7 @@ func (m DashboardModel) renderIssueSearch(width int) string {
 }
 
 func (m DashboardModel) renderMergeRequestSearch(width int) string {
-	if m.searchMode {
+	if m.searchMode && m.searchView == MergeRequestsView {
 		return fitLine(m.searchInput.View(), width)
 	}
 	if strings.TrimSpace(m.mergeRequestSearch) == "" {
@@ -1960,7 +1963,67 @@ func completionTokenSpan(value string, cursor int) (int, int) {
 	for end < len(runes) && !unicode.IsSpace(runes[end]) {
 		end++
 	}
+
+	qualifierStart, ok := qualifierStartIndex(runes, cursor)
+	if ok {
+		start = qualifierStart
+		end = qualifierEndIndex(runes, qualifierStart)
+	}
 	return start, end
+}
+
+func qualifierStartIndex(runes []rune, cursor int) (int, bool) {
+	for idx := cursor - 1; idx >= 0; idx-- {
+		if runes[idx] != ':' {
+			continue
+		}
+		keyStart := idx - 1
+		for keyStart >= 0 && !unicode.IsSpace(runes[keyStart]) {
+			keyStart--
+		}
+		key := strings.ToLower(strings.TrimSpace(string(runes[keyStart+1 : idx])))
+		if !isSearchQualifierKey(key) {
+			continue
+		}
+		return keyStart + 1, true
+	}
+	return 0, false
+}
+
+func qualifierEndIndex(runes []rune, start int) int {
+	idx := start
+	for idx < len(runes) {
+		if !unicode.IsSpace(runes[idx]) {
+			idx++
+			continue
+		}
+		next := idx
+		for next < len(runes) && unicode.IsSpace(runes[next]) {
+			next++
+		}
+		if next >= len(runes) {
+			return len(runes)
+		}
+		tokenEnd := next
+		for tokenEnd < len(runes) && !unicode.IsSpace(runes[tokenEnd]) {
+			tokenEnd++
+		}
+		token := string(runes[next:tokenEnd])
+		if key, _, ok := strings.Cut(token, ":"); ok && isSearchQualifierKey(strings.ToLower(strings.TrimSpace(key))) {
+			return idx
+		}
+		idx = tokenEnd
+	}
+	return len(runes)
+}
+
+func isSearchQualifierKey(key string) bool {
+	switch key {
+	case "author", "assignee", "label", "milestone":
+		return true
+	default:
+		return false
+	}
 }
 
 func sliceRunes(value string, start int, end int) string {

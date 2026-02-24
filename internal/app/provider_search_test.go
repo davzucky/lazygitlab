@@ -87,10 +87,10 @@ func TestProviderParsesIssueMetadataSearch(t *testing.T) {
 func TestProviderParsesMergeRequestMetadataSearch(t *testing.T) {
 	t.Parallel()
 
-	client := &captureClient{}
+	client := &captureClient{members: []*gl.ProjectMember{{ID: 101, Name: "Bob", Username: "bob"}}}
 	provider := NewProvider(client, "group/project")
 
-	_, err := provider.LoadMergeRequests(context.Background(), tui.MergeRequestQuery{State: tui.MergeRequestStateOpened, Search: "cleanup author:alice label:frontend"})
+	_, err := provider.LoadMergeRequests(context.Background(), tui.MergeRequestQuery{State: tui.MergeRequestStateOpened, Search: "cleanup author:alice assignee:Bob label:frontend"})
 	if err != nil {
 		t.Fatalf("LoadMergeRequests() error = %v", err)
 	}
@@ -103,6 +103,9 @@ func TestProviderParsesMergeRequestMetadataSearch(t *testing.T) {
 	}
 	if len(client.mrOpts.Labels) != 1 || client.mrOpts.Labels[0] != "frontend" {
 		t.Fatalf("Labels = %#v want %#v", client.mrOpts.Labels, []string{"frontend"})
+	}
+	if client.mrOpts.AssigneeID != 101 {
+		t.Fatalf("AssigneeID = %d want %d", client.mrOpts.AssigneeID, 101)
 	}
 }
 

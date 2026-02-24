@@ -45,14 +45,7 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 		return tui.IssueResult{}, fmt.Errorf("no project context selected")
 	}
 	parsed := gitlab.ParseSearchQuery(query.Search)
-	authorUsername, assigneeUsername := parsed.Author, parsed.Assignee
-	if strings.TrimSpace(parsed.Author) != "" || strings.TrimSpace(parsed.Assignee) != "" {
-		members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
-		if membersErr == nil {
-			authorUsername = resolveMemberUsername(parsed.Author, members)
-			assigneeUsername = resolveMemberUsername(parsed.Assignee, members)
-		}
-	}
+	authorUsername, assigneeUsername, _ := p.resolveSearchUsers(ctx, parsed.Author, parsed.Assignee)
 
 	issues, hasNextPage, err := p.client.ListIssues(ctx, p.projectPath, gitlab.IssueListOptions{
 		State:            string(query.State),
@@ -90,10 +83,11 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 		}
 		labels := make([]string, 0, len(issue.Labels))
 		for _, label := range issue.Labels {
-			if strings.TrimSpace(label) == "" {
+			trimmed := strings.TrimSpace(label)
+			if trimmed == "" {
 				continue
 			}
-			labels = append(labels, label)
+			labels = append(labels, trimmed)
 		}
 		milestone := ""
 		if issue.Milestone != nil {
@@ -139,24 +133,17 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 		query.PerPage = 25
 	}
 	parsed := gitlab.ParseSearchQuery(query.Search)
-	authorUsername, assigneeUsername := parsed.Author, parsed.Assignee
-	if strings.TrimSpace(parsed.Author) != "" || strings.TrimSpace(parsed.Assignee) != "" {
-		members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
-		if membersErr == nil {
-			authorUsername = resolveMemberUsername(parsed.Author, members)
-			assigneeUsername = resolveMemberUsername(parsed.Assignee, members)
-		}
-	}
+	authorUsername, _, assigneeID := p.resolveSearchUsers(ctx, parsed.Author, parsed.Assignee)
 
 	mrs, hasNextPage, err := p.client.ListMergeRequests(ctx, p.projectPath, gitlab.MergeRequestListOptions{
-		State:            state,
-		Search:           parsed.Text,
-		AuthorUsername:   authorUsername,
-		AssigneeUsername: assigneeUsername,
-		Labels:           parsed.Labels,
-		Milestone:        parsed.Milestone,
-		Page:             int64(query.Page),
-		PerPage:          query.PerPage,
+		State:          state,
+		Search:         parsed.Text,
+		AuthorUsername: authorUsername,
+		AssigneeID:     assigneeID,
+		Labels:         parsed.Labels,
+		Milestone:      parsed.Milestone,
+		Page:           int64(query.Page),
+		PerPage:        query.PerPage,
 	})
 	if err != nil {
 		return tui.MergeRequestResult{}, err
@@ -226,15 +213,15 @@ func (p *Provider) LoadSearchMetadata(ctx context.Context, _ tui.ViewMode) (tui.
 
 	members, err := p.client.ListProjectMembers(ctx, p.projectPath, "")
 	if err != nil {
-		return tui.SearchMetadata{}, err
+		return tui.SearchMetadata{}, fmt.Errorf("list project members for %q: %w", p.projectPath, err)
 	}
 	labels, err := p.client.ListProjectLabels(ctx, p.projectPath, "")
 	if err != nil {
-		return tui.SearchMetadata{}, err
+		return tui.SearchMetadata{}, fmt.Errorf("list project labels for %q: %w", p.projectPath, err)
 	}
 	milestones, err := p.client.ListProjectMilestones(ctx, p.projectPath, "")
 	if err != nil {
-		return tui.SearchMetadata{}, err
+		return tui.SearchMetadata{}, fmt.Errorf("list project milestones for %q: %w", p.projectPath, err)
 	}
 
 	users := uniqueUsers(members)
@@ -445,4 +432,46 @@ func resolveMemberUsername(raw string, members []*gl.ProjectMember) string {
 		}
 	}
 	return trimmed
+}
+
+func resolveMemberID(raw string, members []*gl.ProjectMember) int64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(members) == 0 {
+		return 0
+	}
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Username), trimmed) {
+			return member.ID
+		}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Name), trimmed) {
+			return member.ID
+		}
+	}
+	return 0
+}
+
+func (p *Provider) resolveSearchUsers(ctx context.Context, author string, assignee string) (string, string, int64) {
+	authorUsername := author
+	assigneeUsername := assignee
+	assigneeID := int64(0)
+	if strings.TrimSpace(author) == "" && strings.TrimSpace(assignee) == "" {
+		return authorUsername, assigneeUsername, assigneeID
+	}
+	members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
+	if membersErr != nil {
+		return authorUsername, assigneeUsername, assigneeID
+	}
+	authorUsername = resolveMemberUsername(author, members)
+	assigneeUsername = resolveMemberUsername(assignee, members)
+	assigneeID = resolveMemberID(assignee, members)
+	return authorUsername, assigneeUsername, assigneeID
 }

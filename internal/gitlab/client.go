@@ -42,14 +42,14 @@ type IssueListOptions struct {
 }
 
 type MergeRequestListOptions struct {
-	State            string
-	Search           string
-	AuthorUsername   string
-	AssigneeUsername string
-	Labels           []string
-	Milestone        string
-	Page             int64
-	PerPage          int
+	State          string
+	Search         string
+	AuthorUsername string
+	AssigneeID     int64
+	Labels         []string
+	Milestone      string
+	Page           int64
+	PerPage        int
 }
 
 type client struct {
@@ -258,6 +258,9 @@ func (c *client) ListIssues(ctx context.Context, projectPath string, opts IssueL
 	if opts.AuthorUsername != "" {
 		apiOpts.AuthorUsername = gl.Ptr(opts.AuthorUsername)
 	}
+	if opts.AssigneeUsername != "" {
+		apiOpts.AssigneeUsername = gl.Ptr(opts.AssigneeUsername)
+	}
 	if len(opts.Labels) > 0 {
 		labels := gl.LabelOptions(opts.Labels)
 		apiOpts.Labels = &labels
@@ -362,6 +365,9 @@ func (c *client) ListMergeRequests(ctx context.Context, projectPath string, opts
 	}
 	if opts.AuthorUsername != "" {
 		apiOpts.AuthorUsername = gl.Ptr(opts.AuthorUsername)
+	}
+	if opts.AssigneeID > 0 {
+		apiOpts.AssigneeID = gl.AssigneeID(opts.AssigneeID)
 	}
 	if len(opts.Labels) > 0 {
 		labels := gl.LabelOptions(opts.Labels)
