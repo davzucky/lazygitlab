@@ -615,6 +615,9 @@ func (m DashboardModel) renderMainSplitLines(contentWidth int, bodyRows int) []s
 	if bodyRows <= 0 {
 		return nil
 	}
+	if !m.shouldShowPreview(contentWidth) {
+		return m.renderMainSinglePaneLines(contentWidth, bodyRows)
+	}
 
 	listWidth := max(32, min(contentWidth-26, int(float64(contentWidth)*0.66)))
 	previewWidth := max(24, contentWidth-listWidth-3)
@@ -637,6 +640,29 @@ func (m DashboardModel) renderMainSplitLines(contentWidth int, bodyRows int) []s
 		out = append(out, left+" | "+right)
 	}
 	return out
+}
+
+func (m DashboardModel) shouldShowPreview(contentWidth int) bool {
+	const minPreviewLayoutWidth = 96
+	return contentWidth >= minPreviewLayoutWidth
+}
+
+func (m DashboardModel) renderMainSinglePaneLines(contentWidth int, bodyRows int) []string {
+	if bodyRows <= 0 {
+		return nil
+	}
+	if m.loading {
+		return fitHeight([]string{"  " + m.spinner.View() + " Loading..."}, bodyRows)
+	}
+	if len(m.items) == 0 {
+		return fitHeight([]string{"  No items"}, bodyRows)
+	}
+
+	lines := m.renderListLines(contentWidth, bodyRows)
+	if m.loadingMore {
+		lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
+	}
+	return fitHeight(lines, bodyRows)
 }
 
 func (m DashboardModel) renderListPaneLines(width int, rows int) []string {
