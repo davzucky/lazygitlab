@@ -1,10 +1,13 @@
 package tui
 
+import "fmt"
+
 import tea "github.com/charmbracelet/bubbletea"
 
 var issueKeyHints = []string{
 	"enter: open issue details",
 	"/: search",
+	"tab: autocomplete",
 	"[: prev state",
 	"]: next state",
 	"o/c/a: open/closed/all",
@@ -30,11 +33,8 @@ func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bo
 			return m, tea.Batch(cmd, m.preloadMarkdownCmd()), true
 		}
 	case "/":
-		m.searchMode = true
-		m.searchInput.Focus()
-		m.searchInput.SetValue(m.issueSearch)
-		m.searchInput.CursorEnd()
-		return m, nil, true
+		m = m.openSearch(IssuesView)
+		return m, m.loadSearchMetadataCmd(IssuesView), true
 	case "[":
 		m.issueState = prevIssueState(m.issueState)
 		m.selected = 0
@@ -66,14 +66,19 @@ func (m DashboardModel) handleIssueScreenKey(key string) (tea.Model, tea.Cmd, bo
 }
 
 func (m DashboardModel) renderIssueBody(width int) []string {
+	resultCount := fmt.Sprintf("results: %d", len(m.items))
+	if m.loading {
+		resultCount = "results: loading"
+	}
+	if m.loadingMore {
+		resultCount += " (+more)"
+	}
 	lines := []string{
 		" " + m.renderIssueTabs(max(20, width-8)),
 		" " + m.renderIssueSearch(max(20, width-8)),
-		m.styles.dim.Render(" sort: updated newest first"),
+		m.styles.dim.Render(" sort: updated newest first | " + resultCount),
+		m.styles.dim.Render(" keys: / search, tab complete, [ ] state, enter details, ? help"),
 		"",
-	}
-	for _, hint := range issueKeyHints {
-		lines = append(lines, m.styles.dim.Render(" "+hint))
 	}
 	return lines
 }

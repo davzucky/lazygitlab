@@ -8,6 +8,7 @@ type styles struct {
 	sidebarActive  lipgloss.Style
 	panel          lipgloss.Style
 	header         lipgloss.Style
+	issueID        lipgloss.Style
 	status         lipgloss.Style
 	helpPopup      lipgloss.Style
 	errorPopup     lipgloss.Style
@@ -39,6 +40,9 @@ func newStyles() styles {
 			Padding(0, 1),
 		header: lipgloss.NewStyle().
 			Foreground(accent).
+			Bold(true),
+		issueID: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
 			Bold(true),
 		status: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("255")).

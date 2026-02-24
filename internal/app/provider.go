@@ -9,6 +9,7 @@ import (
 
 	"github.com/davzucky/lazygitlab/internal/gitlab"
 	"github.com/davzucky/lazygitlab/internal/tui"
+	gl "gitlab.com/gitlab-org/api/client-go"
 )
 
 type Provider struct {
@@ -43,12 +44,18 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 	if p.projectPath == "" {
 		return tui.IssueResult{}, fmt.Errorf("no project context selected")
 	}
+	parsed := gitlab.ParseSearchQuery(query.Search)
+	authorUsername, assigneeUsername, _ := p.resolveSearchUsers(ctx, parsed.Author, parsed.Assignee)
 
 	issues, hasNextPage, err := p.client.ListIssues(ctx, p.projectPath, gitlab.IssueListOptions{
-		State:   string(query.State),
-		Search:  query.Search,
-		Page:    int64(query.Page),
-		PerPage: query.PerPage,
+		State:            string(query.State),
+		Search:           parsed.Text,
+		AuthorUsername:   authorUsername,
+		AssigneeUsername: assigneeUsername,
+		Labels:           parsed.Labels,
+		Milestone:        parsed.Milestone,
+		Page:             int64(query.Page),
+		PerPage:          query.PerPage,
 	})
 	if err != nil {
 		return tui.IssueResult{}, err
@@ -58,22 +65,33 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 	for _, issue := range issues {
 		subtitle := fmt.Sprintf("#%d • %s", issue.IID, issue.State)
 		author := "-"
+		authorLogin := ""
 		if issue.Author != nil {
 			author = displayName(issue.Author.Name, issue.Author.Username)
+			authorLogin = strings.TrimSpace(issue.Author.Username)
 		}
 		assignees := make([]string, 0, len(issue.Assignees))
+		assigneeLogins := make([]string, 0, len(issue.Assignees))
 		for _, assignee := range issue.Assignees {
 			if assignee == nil {
 				continue
 			}
 			assignees = append(assignees, displayName(assignee.Name, assignee.Username))
+			if trimmed := strings.TrimSpace(assignee.Username); trimmed != "" {
+				assigneeLogins = append(assigneeLogins, trimmed)
+			}
 		}
 		labels := make([]string, 0, len(issue.Labels))
 		for _, label := range issue.Labels {
-			if strings.TrimSpace(label) == "" {
+			trimmed := strings.TrimSpace(label)
+			if trimmed == "" {
 				continue
 			}
-			labels = append(labels, label)
+			labels = append(labels, trimmed)
+		}
+		milestone := ""
+		if issue.Milestone != nil {
+			milestone = strings.TrimSpace(issue.Milestone.Title)
 		}
 		items = append(items, tui.ListItem{
 			ID:       issue.ID,
@@ -81,15 +99,18 @@ func (p *Provider) LoadIssues(ctx context.Context, query tui.IssueQuery) (tui.Is
 			Subtitle: subtitle,
 			URL:      issue.WebURL,
 			Issue: &tui.IssueDetails{
-				IID:         issue.IID,
-				State:       issue.State,
-				Author:      author,
-				Assignees:   assignees,
-				Labels:      labels,
-				CreatedAt:   formatIssueTime(issue.CreatedAt),
-				UpdatedAt:   formatIssueTime(issue.UpdatedAt),
-				URL:         issue.WebURL,
-				Description: issue.Description,
+				IID:            issue.IID,
+				State:          issue.State,
+				Author:         author,
+				AuthorLogin:    authorLogin,
+				Assignees:      assignees,
+				AssigneeLogins: assigneeLogins,
+				Labels:         labels,
+				Milestone:      milestone,
+				CreatedAt:      formatIssueTime(issue.CreatedAt),
+				UpdatedAt:      formatIssueTime(issue.UpdatedAt),
+				URL:            issue.WebURL,
+				Description:    issue.Description,
 			},
 		})
 	}
@@ -111,11 +132,18 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 	if query.PerPage <= 0 {
 		query.PerPage = 25
 	}
+	parsed := gitlab.ParseSearchQuery(query.Search)
+	authorUsername, _, assigneeID := p.resolveSearchUsers(ctx, parsed.Author, parsed.Assignee)
 
 	mrs, hasNextPage, err := p.client.ListMergeRequests(ctx, p.projectPath, gitlab.MergeRequestListOptions{
-		State:   state,
-		Page:    int64(query.Page),
-		PerPage: query.PerPage,
+		State:          state,
+		Search:         parsed.Text,
+		AuthorUsername: authorUsername,
+		AssigneeID:     assigneeID,
+		Labels:         parsed.Labels,
+		Milestone:      parsed.Milestone,
+		Page:           int64(query.Page),
+		PerPage:        query.PerPage,
 	})
 	if err != nil {
 		return tui.MergeRequestResult{}, err
@@ -125,8 +153,31 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 	for _, mr := range mrs {
 		subtitle := fmt.Sprintf("!%d • %s", mr.IID, mr.State)
 		author := "-"
+		authorLogin := ""
 		if mr.Author != nil {
 			author = displayName(mr.Author.Name, mr.Author.Username)
+			authorLogin = strings.TrimSpace(mr.Author.Username)
+		}
+		assignees := make([]string, 0, len(mr.Assignees))
+		assigneeLogins := make([]string, 0, len(mr.Assignees))
+		for _, assignee := range mr.Assignees {
+			if assignee == nil {
+				continue
+			}
+			assignees = append(assignees, displayName(assignee.Name, assignee.Username))
+			if trimmed := strings.TrimSpace(assignee.Username); trimmed != "" {
+				assigneeLogins = append(assigneeLogins, trimmed)
+			}
+		}
+		labels := make([]string, 0, len(mr.Labels))
+		for _, label := range mr.Labels {
+			if trimmed := strings.TrimSpace(label); trimmed != "" {
+				labels = append(labels, trimmed)
+			}
+		}
+		milestone := ""
+		if mr.Milestone != nil {
+			milestone = strings.TrimSpace(mr.Milestone.Title)
 		}
 		items = append(items, tui.ListItem{
 			ID:       mr.ID,
@@ -134,20 +185,75 @@ func (p *Provider) LoadMergeRequests(ctx context.Context, query tui.MergeRequest
 			Subtitle: subtitle,
 			URL:      mr.WebURL,
 			MergeRequest: &tui.MergeRequestDetails{
-				IID:          mr.IID,
-				State:        mr.State,
-				Author:       author,
-				SourceBranch: mr.SourceBranch,
-				TargetBranch: mr.TargetBranch,
-				CreatedAt:    formatIssueTime(mr.CreatedAt),
-				UpdatedAt:    formatIssueTime(mr.UpdatedAt),
-				URL:          mr.WebURL,
-				Description:  mr.Description,
+				IID:            mr.IID,
+				State:          mr.State,
+				Author:         author,
+				AuthorLogin:    authorLogin,
+				Assignees:      assignees,
+				AssigneeLogins: assigneeLogins,
+				Labels:         labels,
+				Milestone:      milestone,
+				SourceBranch:   mr.SourceBranch,
+				TargetBranch:   mr.TargetBranch,
+				CreatedAt:      formatIssueTime(mr.CreatedAt),
+				UpdatedAt:      formatIssueTime(mr.UpdatedAt),
+				URL:            mr.WebURL,
+				Description:    mr.Description,
 			},
 		})
 	}
 
 	return tui.MergeRequestResult{Items: items, HasNextPage: hasNextPage}, nil
+}
+
+func (p *Provider) LoadSearchMetadata(ctx context.Context, _ tui.ViewMode) (tui.SearchMetadata, error) {
+	if p.projectPath == "" {
+		return tui.SearchMetadata{}, fmt.Errorf("no project context selected")
+	}
+
+	members, err := p.client.ListProjectMembers(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, fmt.Errorf("list project members for %q: %w", p.projectPath, err)
+	}
+	labels, err := p.client.ListProjectLabels(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, fmt.Errorf("list project labels for %q: %w", p.projectPath, err)
+	}
+	milestones, err := p.client.ListProjectMilestones(ctx, p.projectPath, "")
+	if err != nil {
+		return tui.SearchMetadata{}, fmt.Errorf("list project milestones for %q: %w", p.projectPath, err)
+	}
+
+	users := uniqueUsers(members)
+
+	labelNames := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if label == nil {
+			continue
+		}
+		name := strings.TrimSpace(label.Name)
+		if name != "" {
+			labelNames = append(labelNames, name)
+		}
+	}
+
+	milestoneNames := make([]string, 0, len(milestones))
+	for _, milestone := range milestones {
+		if milestone == nil {
+			continue
+		}
+		title := strings.TrimSpace(milestone.Title)
+		if title != "" {
+			milestoneNames = append(milestoneNames, title)
+		}
+	}
+
+	return tui.SearchMetadata{
+		Authors:    users,
+		Assignees:  users,
+		Labels:     uniqueSorted(labelNames),
+		Milestones: uniqueSorted(milestoneNames),
+	}, nil
 }
 
 func (p *Provider) LoadIssueDetailData(ctx context.Context, issueIID int64) (tui.IssueDetailData, error) {
@@ -236,4 +342,136 @@ func formatIssueTime(value *time.Time) string {
 		return "-"
 	}
 	return value.Local().Format("2006-01-02 15:04 MST")
+}
+
+func uniqueSorted(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		unique = append(unique, trimmed)
+	}
+	sort.Strings(unique)
+	if len(unique) == 0 {
+		return nil
+	}
+	return unique
+}
+
+func uniqueUsers(members []*gl.ProjectMember) []tui.SearchUser {
+	if len(members) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(members))
+	users := make([]tui.SearchUser, 0, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		username := strings.TrimSpace(member.Username)
+		if username == "" {
+			continue
+		}
+		if _, ok := seen[username]; ok {
+			continue
+		}
+		seen[username] = struct{}{}
+		users = append(users, tui.SearchUser{Name: strings.TrimSpace(member.Name), Username: username})
+	}
+	sort.Slice(users, func(i int, j int) bool {
+		left := strings.ToLower(displaySearchUser(users[i]))
+		right := strings.ToLower(displaySearchUser(users[j]))
+		if left == right {
+			return users[i].Username < users[j].Username
+		}
+		return left < right
+	})
+	if len(users) == 0 {
+		return nil
+	}
+	return users
+}
+
+func displaySearchUser(user tui.SearchUser) string {
+	if strings.TrimSpace(user.Name) != "" {
+		return strings.TrimSpace(user.Name)
+	}
+	return strings.TrimSpace(user.Username)
+}
+
+func resolveMemberUsername(raw string, members []*gl.ProjectMember) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(members) == 0 {
+		return trimmed
+	}
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Username), trimmed) {
+			return strings.TrimSpace(member.Username)
+		}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Name), trimmed) {
+			return strings.TrimSpace(member.Username)
+		}
+	}
+	return trimmed
+}
+
+func resolveMemberID(raw string, members []*gl.ProjectMember) int64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(members) == 0 {
+		return 0
+	}
+	trimmed = strings.TrimPrefix(trimmed, "@")
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Username), trimmed) {
+			return member.ID
+		}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(member.Name), trimmed) {
+			return member.ID
+		}
+	}
+	return 0
+}
+
+func (p *Provider) resolveSearchUsers(ctx context.Context, author string, assignee string) (string, string, int64) {
+	authorUsername := author
+	assigneeUsername := assignee
+	assigneeID := int64(0)
+	if strings.TrimSpace(author) == "" && strings.TrimSpace(assignee) == "" {
+		return authorUsername, assigneeUsername, assigneeID
+	}
+	members, membersErr := p.client.ListProjectMembers(ctx, p.projectPath, "")
+	if membersErr != nil {
+		return authorUsername, assigneeUsername, assigneeID
+	}
+	authorUsername = resolveMemberUsername(author, members)
+	assigneeUsername = resolveMemberUsername(assignee, members)
+	assigneeID = resolveMemberID(assignee, members)
+	return authorUsername, assigneeUsername, assigneeID
 }

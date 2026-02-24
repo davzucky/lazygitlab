@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -35,6 +37,13 @@ type issueDetailLoadedMsg struct {
 type markdownRenderedMsg struct {
 	cacheKey string
 	lines    []string
+}
+
+type searchMetadataLoadedMsg struct {
+	view      ViewMode
+	metadata  SearchMetadata
+	err       error
+	requestID int
 }
 
 type issueDetailTab int
@@ -77,10 +86,15 @@ type DashboardModel struct {
 	issueState               IssueState
 	mergeRequestState        MergeRequestState
 	issueSearch              string
+	mergeRequestSearch       string
 	issuePage                int
 	issueHasNext             bool
 	mergeRequestPage         int
 	mergeRequestHasNext      bool
+	searchMetadata           SearchMetadata
+	searchMetadataLoading    bool
+	searchRequestSeq         int
+	searchRequestID          int
 	issueDetail              bool
 	mergeRequestDetail       bool
 	detailScroll             int
@@ -95,6 +109,7 @@ type DashboardModel struct {
 	requestSeq               int
 	requestID                int
 	focus                    focusTarget
+	searchView               ViewMode
 }
 
 func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardModel {
@@ -107,6 +122,7 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 	search.Placeholder = "type and press Enter"
 	search.CharLimit = 120
 	search.Width = 30
+	search.ShowSuggestions = true
 
 	return DashboardModel{
 		provider:          provider,
@@ -125,9 +141,12 @@ func NewDashboardModel(provider DataProvider, ctx DashboardContext) DashboardMod
 		markdownBody:      make(map[string][]string),
 		requestSeq:        1,
 		requestID:         1,
+		searchRequestSeq:  1,
+		searchRequestID:   1,
 		issuePage:         1,
 		mergeRequestPage:  1,
 		focus:             focusMain,
+		searchView:        IssuesView,
 	}
 }
 
@@ -236,6 +255,21 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case searchMetadataLoadedMsg:
+		if msg.requestID != m.searchRequestID || msg.view != m.searchView {
+			return m, nil
+		}
+		m.searchMetadataLoading = false
+		if msg.err != nil {
+			m.errorMessage = fmt.Sprintf("failed to load search metadata: %v", msg.err)
+			m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
+			return m, nil
+		}
+		m.searchMetadata = msg.metadata
+		m.errorMessage = ""
+		m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.errorMessage != "" {
 			switch msg.String() {
@@ -267,21 +301,40 @@ func (m DashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.searchMode {
 			m.focus = focusSearch
+			switch msg.String() {
+			case "tab":
+				if updated, ok := m.applySearchCompletion(true); ok {
+					return updated, nil
+				}
+			case "shift+tab":
+				if updated, ok := m.applySearchCompletion(false); ok {
+					return updated, nil
+				}
+			}
 			var cmd tea.Cmd
 			m.searchInput, cmd = m.searchInput.Update(msg)
+			m.resetSearchCompletionState()
 			switch msg.String() {
 			case "enter":
 				m.searchMode = false
 				m.focus = focusMain
 				m.searchInput.Blur()
-				m.issueSearch = strings.TrimSpace(m.searchInput.Value())
+				if m.searchView == MergeRequestsView {
+					m.mergeRequestSearch = strings.TrimSpace(m.searchInput.Value())
+				} else {
+					m.issueSearch = strings.TrimSpace(m.searchInput.Value())
+				}
 				m.selected = 0
 				return m.startLoadCurrentView()
 			case "esc":
 				m.searchMode = false
 				m.focus = focusMain
 				m.searchInput.Blur()
-				m.searchInput.SetValue(m.issueSearch)
+				if m.searchView == MergeRequestsView {
+					m.searchInput.SetValue(m.mergeRequestSearch)
+				} else {
+					m.searchInput.SetValue(m.issueSearch)
+				}
 				return m, nil
 			}
 			return m, cmd
@@ -553,21 +606,166 @@ func (m DashboardModel) renderMain(width int, height int) string {
 		lines = append(lines, m.styles.dim.Render(" press r to retry, Esc to dismiss"))
 	}
 	bodyRows := max(1, height-len(lines)-2)
-	if m.loading {
-		lines = append(lines, "  "+m.spinner.View()+" Loading...")
-	} else if len(m.items) == 0 {
-		lines = append(lines, "  No items")
-	} else {
-		contentWidth := max(10, width-8)
-		lines = append(lines, m.renderListLines(contentWidth, bodyRows)...)
-		if m.loadingMore {
-			lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
-		}
-	}
+	contentWidth := max(10, width-8)
+	lines = append(lines, m.renderMainSplitLines(contentWidth, bodyRows)...)
 
 	innerHeight := max(1, height-m.styles.panel.GetVerticalFrameSize())
 	lines = fitHeight(lines, innerHeight)
 	return renderSizedBox(m.styles.panel, width, height, strings.Join(lines, "\n"))
+}
+
+func (m DashboardModel) renderMainSplitLines(contentWidth int, bodyRows int) []string {
+	if bodyRows <= 0 {
+		return nil
+	}
+	if !m.shouldShowPreview(contentWidth) {
+		return m.renderMainSinglePaneLines(contentWidth, bodyRows)
+	}
+
+	listWidth := max(32, min(contentWidth-26, int(float64(contentWidth)*0.66)))
+	previewWidth := max(24, contentWidth-listWidth-3)
+	header := m.styles.dim.Render(fitLine(" Results", listWidth)) + " | " + m.styles.dim.Render(fitLine(" Preview", previewWidth))
+	if bodyRows == 1 {
+		return []string{header}
+	}
+
+	rows := bodyRows - 1
+	listLines := m.renderListPaneLines(listWidth, rows)
+	previewLines := m.renderPreviewLines(previewWidth, rows)
+	listLines = fitHeight(listLines, rows)
+	previewLines = fitHeight(previewLines, rows)
+
+	out := make([]string, 0, bodyRows)
+	out = append(out, header)
+	for i := 0; i < rows; i++ {
+		left := padToWidth(listLines[i], listWidth)
+		right := fitLine(previewLines[i], previewWidth)
+		out = append(out, left+" | "+right)
+	}
+	return out
+}
+
+func (m DashboardModel) shouldShowPreview(contentWidth int) bool {
+	const minPreviewLayoutWidth = 96
+	return contentWidth >= minPreviewLayoutWidth
+}
+
+func (m DashboardModel) renderMainSinglePaneLines(contentWidth int, bodyRows int) []string {
+	if bodyRows <= 0 {
+		return nil
+	}
+	if m.loading {
+		return fitHeight([]string{"  " + m.spinner.View() + " Loading..."}, bodyRows)
+	}
+	if len(m.items) == 0 {
+		return fitHeight([]string{"  No items"}, bodyRows)
+	}
+
+	lines := m.renderListLines(contentWidth, bodyRows)
+	if m.loadingMore {
+		lines = append(lines, m.styles.dim.Render("  "+m.spinner.View()+" Loading next page..."))
+	}
+	return fitHeight(lines, bodyRows)
+}
+
+func (m DashboardModel) renderListPaneLines(width int, rows int) []string {
+	if rows <= 0 {
+		return nil
+	}
+	if m.loading {
+		return fitHeight([]string{" " + m.spinner.View() + " Loading..."}, rows)
+	}
+	if len(m.items) == 0 {
+		return fitHeight([]string{" No items"}, rows)
+	}
+
+	lines := m.renderListLines(width, rows)
+	if m.loadingMore {
+		lines = append(lines, m.styles.dim.Render(" "+m.spinner.View()+" Loading next page..."))
+	}
+	return lines
+}
+
+func (m DashboardModel) renderPreviewLines(width int, rows int) []string {
+	if rows <= 0 {
+		return nil
+	}
+	if len(m.items) == 0 || m.selected < 0 || m.selected >= len(m.items) {
+		return []string{m.styles.dim.Render("Select an item to preview")}
+	}
+
+	item := m.items[m.selected]
+	if m.view == MergeRequestsView {
+		return m.mergeRequestPreviewLines(item, width)
+	}
+	return m.issuePreviewLines(item, width)
+}
+
+func (m DashboardModel) issuePreviewLines(item ListItem, width int) []string {
+	if item.Issue == nil {
+		return wrapLines([]string{
+			fallbackValue(item.Title, "-"),
+			"",
+			"No issue metadata available.",
+		}, width)
+	}
+	details := item.Issue
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("#%d", details.IID)
+	}
+	meta := []string{
+		fallbackValue(item.Title, "-"),
+		"",
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
+		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Assignees: %s", joinOrFallback(details.Assignees, "Unassigned")),
+		fmt.Sprintf("Labels: %s", joinOrFallback(details.Labels, "None")),
+		fmt.Sprintf("Milestone: %s", fallbackValue(details.Milestone, "None")),
+		fmt.Sprintf("Updated: %s", fallbackValue(details.UpdatedAt, "-")),
+		"",
+		"Description:",
+	}
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		description = "No description provided."
+	}
+	return append(wrapLines(meta, width), renderMarkdownParagraphs(description, width)...)
+}
+
+func (m DashboardModel) mergeRequestPreviewLines(item ListItem, width int) []string {
+	if item.MergeRequest == nil {
+		return wrapLines([]string{
+			fallbackValue(item.Title, "-"),
+			"",
+			"No merge request metadata available.",
+		}, width)
+	}
+	details := item.MergeRequest
+	iid := "-"
+	if details.IID > 0 {
+		iid = fmt.Sprintf("!%d", details.IID)
+	}
+	meta := []string{
+		fallbackValue(item.Title, "-"),
+		"",
+		fmt.Sprintf("IID: %s", iid),
+		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
+		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Assignees: %s", joinOrFallback(details.Assignees, "Unassigned")),
+		fmt.Sprintf("Labels: %s", joinOrFallback(details.Labels, "None")),
+		fmt.Sprintf("Milestone: %s", fallbackValue(details.Milestone, "None")),
+		fmt.Sprintf("Branches: %s -> %s", fallbackValue(details.SourceBranch, "-"), fallbackValue(details.TargetBranch, "-")),
+		fmt.Sprintf("Updated: %s", fallbackValue(details.UpdatedAt, "-")),
+		"",
+		"Description:",
+	}
+	description := strings.TrimSpace(details.Description)
+	if description == "" {
+		description = "No description provided."
+	}
+	return append(wrapLines(meta, width), renderMarkdownParagraphs(description, width)...)
 }
 
 func (m DashboardModel) renderListLines(contentWidth int, bodyRows int) []string {
@@ -587,8 +785,17 @@ func (m DashboardModel) renderListLines(contentWidth int, bodyRows int) []string
 			prefix = "› "
 			rowStyle = m.styles.selectedRow
 		}
-		line := prefix + fitLine(item.Title, rowWidth)
-		lines = append(lines, rowStyle.Render(line))
+		if m.view == IssuesView && item.Issue != nil && item.Issue.IID > 0 {
+			issueID := fmt.Sprintf("#%d", item.Issue.IID)
+			idWidth := lipgloss.Width(issueID)
+			titleWidth := max(1, rowWidth-idWidth-1)
+			title := fitLine(item.Title, titleWidth)
+			line := prefix + m.styles.issueID.Render(issueID) + " " + rowStyle.Render(title)
+			lines = append(lines, line)
+		} else {
+			line := prefix + fitLine(item.Title, rowWidth)
+			lines = append(lines, rowStyle.Render(line))
+		}
 		if m.view == IssuesView {
 			meta := "  " + fitLine(issueListMeta(item), rowWidth)
 			lines = append(lines, m.styles.dim.Render(meta))
@@ -660,6 +867,9 @@ func (m DashboardModel) renderStatusBar(width int) string {
 		}
 	} else if m.view == MergeRequestsView {
 		status += fmt.Sprintf(" | merge requests: %s", mergeRequestStateLabel(m.mergeRequestState))
+		if strings.TrimSpace(m.mergeRequestSearch) != "" {
+			status += fmt.Sprintf(" | search=%q", m.mergeRequestSearch)
+		}
 		if m.loadingMore {
 			status += " | loading more"
 		}
@@ -700,7 +910,7 @@ func (m DashboardModel) renderHelp() string {
 		"Common:",
 		"  esc                 Close detail",
 		"  d/a/c               Jump Detail/Activities/Comments",
-		"  /                   Search issues",
+		"  /                   Search current list",
 		"  r                   Retry load (errors)",
 		"  q                   Quit",
 		"  ?                   Toggle help",
@@ -845,6 +1055,9 @@ func (m DashboardModel) mergeRequestDetailLines(width int) []string {
 		fmt.Sprintf("IID: %s", iid),
 		fmt.Sprintf("State: %s", fallbackValue(details.State, "-")),
 		fmt.Sprintf("Author: %s", fallbackValue(details.Author, "-")),
+		fmt.Sprintf("Assignees: %s", joinOrFallback(details.Assignees, "Unassigned")),
+		fmt.Sprintf("Labels: %s", joinOrFallback(details.Labels, "None")),
+		fmt.Sprintf("Milestone: %s", fallbackValue(details.Milestone, "None")),
 		fmt.Sprintf("Source: %s", fallbackValue(details.SourceBranch, "-")),
 		fmt.Sprintf("Target: %s", fallbackValue(details.TargetBranch, "-")),
 		fmt.Sprintf("Created: %s", fallbackValue(details.CreatedAt, "-")),
@@ -977,6 +1190,7 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 	author := fallbackValue(details.Author, "-")
 	assignees := joinOrFallback(details.Assignees, "Unassigned")
 	labels := joinOrFallback(details.Labels, "None")
+	milestone := fallbackValue(details.Milestone, "None")
 	createdAt := fallbackValue(details.CreatedAt, "-")
 	updatedAt := fallbackValue(details.UpdatedAt, "-")
 	url := fallbackValue(details.URL, "-")
@@ -993,6 +1207,7 @@ func (m DashboardModel) issueDetailLines(width int) []string {
 		fmt.Sprintf("Author: %s", author),
 		fmt.Sprintf("Assignees: %s", assignees),
 		fmt.Sprintf("Labels: %s", labels),
+		fmt.Sprintf("Milestone: %s", milestone),
 		fmt.Sprintf("Created: %s", createdAt),
 		fmt.Sprintf("Updated: %s", updatedAt),
 		fmt.Sprintf("URL: %s", url),
@@ -1420,8 +1635,9 @@ func renderSizedBox(style lipgloss.Style, width int, height int, content string)
 
 func issueListMeta(item ListItem) string {
 	const (
-		authorColWidth   = 22
-		assigneeColWidth = 22
+		authorColWidth   = 18
+		assigneeColWidth = 18
+		labelColWidth    = 16
 	)
 
 	if item.Issue == nil {
@@ -1429,19 +1645,22 @@ func issueListMeta(item ListItem) string {
 			return item.Subtitle
 		}
 		return fmt.Sprintf(
-			"by %s | to %s | created %s",
+			"by %s | to %s | labels %s | created %s",
 			padOrTrimRight("-", authorColWidth),
 			padOrTrimRight("Unassigned", assigneeColWidth),
+			padOrTrimRight("None", labelColWidth),
 			"-",
 		)
 	}
 	author := padOrTrimRight(fallbackValue(item.Issue.Author, "-"), authorColWidth)
 	assignee := padOrTrimRight(joinOrFallback(item.Issue.Assignees, "Unassigned"), assigneeColWidth)
+	labels := padOrTrimRight(joinOrFallback(item.Issue.Labels, "None"), labelColWidth)
 	created := fallbackValue(item.Issue.CreatedAt, "-")
 	return fmt.Sprintf(
-		"by %s | to %s | created %s",
+		"by %s | to %s | labels %s | created %s",
 		author,
 		assignee,
+		labels,
 		created,
 	)
 }
@@ -1463,6 +1682,7 @@ func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, page int
 	issueState := m.issueState
 	mergeRequestState := m.mergeRequestState
 	issueSearch := m.issueSearch
+	mergeRequestSearch := m.mergeRequestSearch
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
@@ -1485,7 +1705,7 @@ func (m DashboardModel) loadCurrentViewCmd(requestID int, replace bool, page int
 			items = result.Items
 			hasNextPage = result.HasNextPage
 		case MergeRequestsView:
-			result, mergeRequestErr := provider.LoadMergeRequests(ctx, MergeRequestQuery{State: mergeRequestState, Page: page, PerPage: 25})
+			result, mergeRequestErr := provider.LoadMergeRequests(ctx, MergeRequestQuery{State: mergeRequestState, Search: mergeRequestSearch, Page: page, PerPage: 25})
 			err = mergeRequestErr
 			items = result.Items
 			hasNextPage = result.HasNextPage
@@ -1541,13 +1761,310 @@ func (m DashboardModel) renderIssueTabs(width int) string {
 }
 
 func (m DashboardModel) renderIssueSearch(width int) string {
-	if m.searchMode {
+	if m.searchMode && m.searchView == IssuesView {
 		return fitLine(m.searchInput.View(), width)
 	}
 	if strings.TrimSpace(m.issueSearch) == "" {
 		return fitLine("Search: (press /)", width)
 	}
 	return fitLine(fmt.Sprintf("Search: %s (press / to edit)", m.issueSearch), width)
+}
+
+func (m DashboardModel) renderMergeRequestSearch(width int) string {
+	if m.searchMode && m.searchView == MergeRequestsView {
+		return fitLine(m.searchInput.View(), width)
+	}
+	if strings.TrimSpace(m.mergeRequestSearch) == "" {
+		return fitLine("Search: (press /)", width)
+	}
+	return fitLine(fmt.Sprintf("Search: %s (press / to edit)", m.mergeRequestSearch), width)
+}
+
+func (m DashboardModel) openSearch(view ViewMode) DashboardModel {
+	m.searchMode = true
+	m.searchView = view
+	m.searchMetadata = SearchMetadata{}
+	m.searchMetadataLoading = true
+	m.searchRequestSeq++
+	m.searchRequestID = m.searchRequestSeq
+	m.searchInput.Focus()
+	if view == MergeRequestsView {
+		m.searchInput.SetValue(m.mergeRequestSearch)
+	} else {
+		m.searchInput.SetValue(m.issueSearch)
+	}
+	m.searchInput.SetSuggestions(m.searchSuggestions(view))
+	m.searchInput.CursorEnd()
+	return m
+}
+
+func (m DashboardModel) loadSearchMetadataCmd(view ViewMode) tea.Cmd {
+	provider := m.provider
+	requestID := m.searchRequestID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		metadata, err := provider.LoadSearchMetadata(ctx, view)
+		return searchMetadataLoadedMsg{view: view, metadata: metadata, err: err, requestID: requestID}
+	}
+}
+
+func (m DashboardModel) searchSuggestions(view ViewMode) []string {
+	unique := map[string]struct{}{
+		"author:":    {},
+		"assignee:":  {},
+		"label:":     {},
+		"milestone:": {},
+	}
+
+	for _, item := range m.items {
+		if view == IssuesView {
+			if item.Issue == nil {
+				continue
+			}
+			if login := strings.TrimSpace(item.Issue.AuthorLogin); login != "" {
+				unique["author:"+login] = struct{}{}
+			}
+			for _, login := range item.Issue.AssigneeLogins {
+				if trimmed := strings.TrimSpace(login); trimmed != "" {
+					unique["assignee:"+trimmed] = struct{}{}
+				}
+			}
+			for _, label := range item.Issue.Labels {
+				if suggestion := qualifierSuggestion("label", label); suggestion != "" {
+					unique[suggestion] = struct{}{}
+				}
+			}
+			if suggestion := qualifierSuggestion("milestone", item.Issue.Milestone); suggestion != "" {
+				unique[suggestion] = struct{}{}
+			}
+			continue
+		}
+
+		if item.MergeRequest == nil {
+			continue
+		}
+		if login := strings.TrimSpace(item.MergeRequest.AuthorLogin); login != "" {
+			unique["author:"+login] = struct{}{}
+		}
+		for _, login := range item.MergeRequest.AssigneeLogins {
+			if trimmed := strings.TrimSpace(login); trimmed != "" {
+				unique["assignee:"+trimmed] = struct{}{}
+			}
+		}
+		for _, label := range item.MergeRequest.Labels {
+			if suggestion := qualifierSuggestion("label", label); suggestion != "" {
+				unique[suggestion] = struct{}{}
+			}
+		}
+		if suggestion := qualifierSuggestion("milestone", item.MergeRequest.Milestone); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+
+	for _, author := range m.searchMetadata.Authors {
+		if suggestion := qualifierSuggestion("author", userDisplayValue(author)); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+	for _, assignee := range m.searchMetadata.Assignees {
+		if suggestion := qualifierSuggestion("assignee", userDisplayValue(assignee)); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+	for _, label := range m.searchMetadata.Labels {
+		if suggestion := qualifierSuggestion("label", label); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+	for _, milestone := range m.searchMetadata.Milestones {
+		if suggestion := qualifierSuggestion("milestone", milestone); suggestion != "" {
+			unique[suggestion] = struct{}{}
+		}
+	}
+
+	suggestions := make([]string, 0, len(unique))
+	for value := range unique {
+		suggestions = append(suggestions, value)
+	}
+	sort.Strings(suggestions)
+	return suggestions
+}
+
+func qualifierSuggestion(key string, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return key + ":" + trimmed
+}
+
+func userDisplayValue(user SearchUser) string {
+	if trimmed := strings.TrimSpace(user.Name); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(user.Username)
+}
+
+func (m *DashboardModel) resetSearchCompletionState() {
+	m.searchInput.SetSuggestions(m.searchSuggestions(m.searchView))
+}
+
+func (m DashboardModel) applySearchCompletion(next bool) (DashboardModel, bool) {
+	value := m.searchInput.Value()
+	start, end := completionTokenSpan(value, m.searchInput.Position())
+	token := sliceRunes(value, start, end)
+	all := m.searchSuggestions(m.searchView)
+	matches := make([]string, 0, len(all))
+	needle := strings.ToLower(token)
+	for _, suggestion := range all {
+		if strings.HasPrefix(strings.ToLower(suggestion), needle) {
+			matches = append(matches, suggestion)
+		}
+	}
+	if len(matches) == 0 {
+		return m, false
+	}
+
+	index := 0
+	if current, exists := currentValueIndex(matches, token); exists {
+		if next {
+			index = (current + 1) % len(matches)
+		} else {
+			index = current - 1
+			if index < 0 {
+				index = len(matches) - 1
+			}
+		}
+	}
+
+	replacement := matches[index]
+	updatedValue := replaceRuneSpan(value, start, end, replacement)
+	m.searchInput.SetValue(updatedValue)
+	m.searchInput.SetCursor(start + len([]rune(replacement)))
+	m.searchInput.SetSuggestions(matches)
+	return m, true
+}
+
+func completionTokenSpan(value string, cursor int) (int, int) {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+
+	start := cursor
+	for start > 0 && !unicode.IsSpace(runes[start-1]) {
+		start--
+	}
+	end := cursor
+	for end < len(runes) && !unicode.IsSpace(runes[end]) {
+		end++
+	}
+
+	qualifierStart, ok := qualifierStartIndex(runes, cursor)
+	if ok {
+		start = qualifierStart
+		end = qualifierEndIndex(runes, qualifierStart)
+	}
+	return start, end
+}
+
+func qualifierStartIndex(runes []rune, cursor int) (int, bool) {
+	for idx := cursor - 1; idx >= 0; idx-- {
+		if runes[idx] != ':' {
+			continue
+		}
+		keyStart := idx - 1
+		for keyStart >= 0 && !unicode.IsSpace(runes[keyStart]) {
+			keyStart--
+		}
+		key := strings.ToLower(strings.TrimSpace(string(runes[keyStart+1 : idx])))
+		if !isSearchQualifierKey(key) {
+			continue
+		}
+		return keyStart + 1, true
+	}
+	return 0, false
+}
+
+func qualifierEndIndex(runes []rune, start int) int {
+	idx := start
+	for idx < len(runes) {
+		if !unicode.IsSpace(runes[idx]) {
+			idx++
+			continue
+		}
+		next := idx
+		for next < len(runes) && unicode.IsSpace(runes[next]) {
+			next++
+		}
+		if next >= len(runes) {
+			return len(runes)
+		}
+		tokenEnd := next
+		for tokenEnd < len(runes) && !unicode.IsSpace(runes[tokenEnd]) {
+			tokenEnd++
+		}
+		token := string(runes[next:tokenEnd])
+		if key, _, ok := strings.Cut(token, ":"); ok && isSearchQualifierKey(strings.ToLower(strings.TrimSpace(key))) {
+			return idx
+		}
+		idx = tokenEnd
+	}
+	return len(runes)
+}
+
+func isSearchQualifierKey(key string) bool {
+	switch key {
+	case "author", "assignee", "label", "milestone":
+		return true
+	default:
+		return false
+	}
+}
+
+func sliceRunes(value string, start int, end int) string {
+	runes := []rune(value)
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	return string(runes[start:end])
+}
+
+func replaceRuneSpan(value string, start int, end int, replacement string) string {
+	runes := []rune(value)
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(runes) {
+		end = len(runes)
+	}
+	out := make([]rune, 0, len(runes)-max(0, end-start)+len([]rune(replacement)))
+	out = append(out, runes[:start]...)
+	out = append(out, []rune(replacement)...)
+	out = append(out, runes[end:]...)
+	return string(out)
+}
+
+func currentValueIndex(values []string, current string) (int, bool) {
+	for i, value := range values {
+		if value == current {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func issueStateLabel(state IssueState) string {
