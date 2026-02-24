@@ -782,8 +782,17 @@ func (m DashboardModel) renderListLines(contentWidth int, bodyRows int) []string
 			prefix = "› "
 			rowStyle = m.styles.selectedRow
 		}
-		line := prefix + fitLine(item.Title, rowWidth)
-		lines = append(lines, rowStyle.Render(line))
+		if m.view == IssuesView && item.Issue != nil && item.Issue.IID > 0 {
+			issueID := fmt.Sprintf("#%d", item.Issue.IID)
+			idWidth := lipgloss.Width(issueID)
+			titleWidth := max(1, rowWidth-idWidth-1)
+			title := fitLine(item.Title, titleWidth)
+			line := prefix + m.styles.issueID.Render(issueID) + " " + rowStyle.Render(title)
+			lines = append(lines, line)
+		} else {
+			line := prefix + fitLine(item.Title, rowWidth)
+			lines = append(lines, rowStyle.Render(line))
+		}
 		if m.view == IssuesView {
 			meta := "  " + fitLine(issueListMeta(item), rowWidth)
 			lines = append(lines, m.styles.dim.Render(meta))
